@@ -1,0 +1,267 @@
+{
+  "schema": "gs_link_lan_soak_v1",
+  "generated_at": "2026-10-21T10:39:29.623995+08:00",
+  "target": {
+    "esp": "192.168.31.100",
+    "host": "192.168.31.220",
+    "host_port": 39052,
+    "protocol": "GS-Link v1 over UDP"
+  },
+  "esp": {
+    "idf_version": "HEAD-HASH-NOTFOUND",
+    "low_latency_revision": "LL2",
+    "wifi_channel": 36,
+    "wifi_rssi": -42,
+    "wifi_power_save": 0,
+    "db_build_version": 16,
+    "major_version": 2,
+    "minor_version": 2,
+    "patch_version": 0,
+    "maturity_version": "RC1",
+    "esp_chip_model": 23,
+    "wifi_5g_supported": 1,
+    "has_rf_switch": 0,
+    "esp_mac": "10:BD:A3:C9:5A:10",
+    "serial_via_JTAG": 0
+  },
+  "serial_config_before": {
+    "baud": 4000000,
+    "proto": 5,
+    "trans_pack_size": 512,
+    "serial_timeout": 1,
+    "gpio_tx": 11,
+    "gpio_rx": 12
+  },
+  "serial_config_after": {
+    "baud": 4000000,
+    "proto": 5,
+    "trans_pack_size": 512,
+    "serial_timeout": 1,
+    "gpio_tx": 11,
+    "gpio_rx": 12
+  },
+  "registration_response": {
+    "status": "success",
+    "msg": "Added UDP connection!"
+  },
+  "measurement_duration_s": 300.005372642001,
+  "load": {
+    "idle_rc_enabled": true,
+    "ping_hz_target": 10.0,
+    "rc_hz_target": 50.0,
+    "gcs_heartbeat_hz_target": 10.0,
+    "ping_frames_sent": 3000,
+    "idle_rc_frames_sent": 15000,
+    "gcs_heartbeat_frames_sent": 3000
+  },
+  "latency_loss": {
+    "ping_sent": 3000,
+    "ping_acked": 3000,
+    "ping_loss_pct": 0.0,
+    "duplicate_ack_frames": 0,
+    "ack_result_errors": 0,
+    "rtt_ms": {
+      "count": 3000,
+      "min": 1.644147007027641,
+      "mean": 2.602759502706855,
+      "p50": 2.4867495012586005,
+      "p95": 3.6838504071056364,
+      "p99": 4.8645105934701816,
+      "max": 6.593869999051094,
+      "stdev": 0.5855917864754044
+    },
+    "successful_ack_gap_ms": {
+      "count": 2999,
+      "min": 85.90912100044079,
+      "mean": 100.00015571390482,
+      "p50": 102.75227300007828,
+      "p95": 104.64145239384379,
+      "p99": 105.98818808648502,
+      "max": 113.22558499523439,
+      "stdev": 4.8516845325054305
+    },
+    "downlink_datagram_gap_ms": {
+      "count": 22742,
+      "min": 0.01292400702368468,
+      "mean": 13.235407862632963,
+      "p50": 16.50649849761976,
+      "p95": 20.990184153197333,
+      "p99": 21.27859869491658,
+      "max": 25.145211999188177,
+      "stdev": 7.946579966558532
+    },
+    "fc_telemetry_period_ms": {
+      "count": 14535,
+      "min": 20.0,
+      "mean": 20.71393188854489,
+      "p50": 21.0,
+      "p95": 21.0,
+      "p99": 21.0,
+      "max": 22.0,
+      "stdev": 0.4593364879054865
+    }
+  },
+  "downlink_integrity": {
+    "datagrams": 22743,
+    "frames_all_types": 20528,
+    "telemetry_frames": 14536,
+    "heartbeat_frames": 2992,
+    "sequence_span": 20528,
+    "missing_sequence_estimate": 0,
+    "missing_sequence_pct": 0.0,
+    "crc_errors": 0,
+    "length_errors": 0,
+    "resync_bytes": 0,
+    "link_ok_frames": 14496,
+    "link_ok_pct": 99.72482113373692
+  },
+  "bandwidth": {
+    "observed_downlink_Bps": 2166.6278649471074,
+    "observed_downlink_kbitps": 17.33302291957686,
+    "observed_uplink_Bps": 1839.967048385851,
+    "observed_uplink_kbitps": 14.719736387086808,
+    "observed_total_Bps": 4006.5949133329586,
+    "uart_read_growth_bytes": 655804,
+    "uart_read_rate_Bps": 2185.974185144266,
+    "uart_direction_capacity_Bps_8N1": 400000.0,
+    "uart_ingress_utilization_pct": 0.5464935462860665,
+    "uart_ingress_headroom_factor": 182.98477755061026,
+    "udp_downlink_utilization_pct_uart": 0.5416569662367768,
+    "udp_downlink_headroom_factor_uart": 184.618690856616,
+    "udp_uplink_utilization_pct_uart": 0.45999176209646275,
+    "udp_uplink_headroom_factor_uart": 217.3951975666674,
+    "note": "UART capacity assumes 4,000,000 baud, 8N1, 10 bits per byte. Wi-Fi PHY capacity was not saturated or measured."
+  },
+  "fc_status": {
+    "session_ids": [
+      "0x9E33A4B7"
+    ],
+    "final_status_flags": "0x0070",
+    "final_rssi_dbm": -41,
+    "status_flags_observed": [
+      "0x0070",
+      "0x1070"
+    ],
+    "failsafe_frames": 14536,
+    "attitude_valid_frames": 14536,
+    "motor_rpm_valid_frames": 14536
+  },
+  "per_minute": [
+    {
+      "minute": 1,
+      "pings_sent": 600,
+      "pings_acked": 600,
+      "ping_loss_pct": 0.0,
+      "rtt_ms": {
+        "count": 600,
+        "min": 1.6901769995456561,
+        "mean": 2.675848002642548,
+        "p50": 2.497319503163453,
+        "p95": 4.443171246384734,
+        "p99": 4.824320258921942,
+        "max": 6.3939399988157675,
+        "stdev": 0.7269433403069753
+      },
+      "telemetry_frames": 2899,
+      "heartbeat_frames": 596,
+      "udp_datagrams": 4536,
+      "downlink_Bps": 2160.9,
+      "link_ok_frames": 2898,
+      "link_ok_pct": 99.96550534667126
+    },
+    {
+      "minute": 2,
+      "pings_sent": 600,
+      "pings_acked": 600,
+      "ping_loss_pct": 0.0,
+      "rtt_ms": {
+        "count": 600,
+        "min": 1.731342010316439,
+        "mean": 2.5078318137335978,
+        "p50": 2.4219714978244156,
+        "p95": 3.346922252967488,
+        "p99": 3.771314907353371,
+        "max": 6.047204005881213,
+        "stdev": 0.44225094902822454
+      },
+      "telemetry_frames": 2895,
+      "heartbeat_frames": 597,
+      "udp_datagrams": 4553,
+      "downlink_Bps": 2159.1,
+      "link_ok_frames": 2895,
+      "link_ok_pct": 100.0
+    },
+    {
+      "minute": 3,
+      "pings_sent": 600,
+      "pings_acked": 600,
+      "ping_loss_pct": 0.0,
+      "rtt_ms": {
+        "count": 600,
+        "min": 1.7415399925084785,
+        "mean": 2.5407604184147203,
+        "p50": 2.434296991850715,
+        "p95": 3.3899091373314145,
+        "p99": 4.636403694166799,
+        "max": 5.447586008813232,
+        "stdev": 0.5050038804855986
+      },
+      "telemetry_frames": 2898,
+      "heartbeat_frames": 596,
+      "udp_datagrams": 4532,
+      "downlink_Bps": 2160.3333333333335,
+      "link_ok_frames": 2898,
+      "link_ok_pct": 100.0
+    },
+    {
+      "minute": 4,
+      "pings_sent": 600,
+      "pings_acked": 600,
+      "ping_loss_pct": 0.0,
+      "rtt_ms": {
+        "count": 600,
+        "min": 1.644147007027641,
+        "mean": 2.6801895333483117,
+        "p50": 2.5449375025345944,
+        "p95": 3.7560499513347168,
+        "p99": 5.340958089072955,
+        "max": 6.593869999051094,
+        "stdev": 0.648691579912176
+      },
+      "telemetry_frames": 2898,
+      "heartbeat_frames": 597,
+      "udp_datagrams": 4508,
+      "downlink_Bps": 2160.8,
+      "link_ok_frames": 2898,
+      "link_ok_pct": 100.0
+    },
+    {
+      "minute": 5,
+      "pings_sent": 600,
+      "pings_acked": 600,
+      "ping_loss_pct": 0.0,
+      "rtt_ms": {
+        "count": 600,
+        "min": 1.712272991426289,
+        "mean": 2.609167745395098,
+        "p50": 2.5269779944210313,
+        "p95": 3.59626529025263,
+        "p99": 4.7692104894667855,
+        "max": 5.728817006456666,
+        "stdev": 0.5410567589070568
+      },
+      "telemetry_frames": 2946,
+      "heartbeat_frames": 606,
+      "udp_datagrams": 4614,
+      "downlink_Bps": 2192.2,
+      "link_ok_frames": 2907,
+      "link_ok_pct": 98.67617107942974
+    }
+  ],
+  "cleanup": {
+    "verified": true,
+    "udp_clients": [],
+    "udp_connected": 0,
+    "esp_read_bytes_after": 1986144
+  }
+}

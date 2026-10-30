@@ -2,7 +2,7 @@
 """Closed-loop polarity check for the embedded identified 19-state LQI.
 
 The firmware payload is generated from
-``Identification/datasets/real_logs_26_8_12_v1/offline_identification_v7_hybrid.json``
+``Identification/datasets/real_logs_26_10_26_v1/offline_identification_v7_hybrid.json``
 by ``px4_trans/tools/generate_lqi_backend.py``.  This script rebuilds the
 exact payload and runs the exact generator mirror of ``LqiCompositeCore``
 against SimEnv:
@@ -31,6 +31,7 @@ from typing import Any, Mapping
 
 import numpy as np
 import torch
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -144,6 +145,7 @@ def _simulate(
     pitch_deg: float,
     collective: float,
     duration_s: float,
+    simulator_config: Path,
     seed: int = 20260812,
 ) -> dict[str, Any]:
     from simenv import SimulationEnvironment
@@ -155,7 +157,7 @@ def _simulate(
     device = torch.device("cpu")
     dtype = torch.float32
     materialized = load_and_materialize(
-        ROOT / "SimEnv/configs/sim2real_micro_coaxial.yaml", 1, device, dtype
+        simulator_config, 1, device, dtype
     )
     initial_state = dict(materialized.initial_state)
     initial_state["attitude_q_wb"] = torch.from_numpy(
@@ -244,22 +246,30 @@ def main() -> None:
     parser.add_argument("--duration-s", type=float, default=4.0)
     parser.add_argument("--collective", type=float, default=0.45)
     parser.add_argument(
+        "--deployment-config",
+        type=Path,
+        default=ROOT / "px4_trans/configs/lqi_nominal_deployment_v2.yaml",
+    )
+    parser.add_argument(
         "--identified-json",
         type=Path,
         default=ROOT
-        / "Identification/datasets/real_logs_26_8_12_v1/offline_identification_v7_hybrid.json",
+        / "Identification/datasets/real_logs_26_10_26_v1/offline_identification_v7_hybrid.json",
     )
     parser.add_argument(
         "--identified-checkpoint",
         type=Path,
         default=ROOT
-        / "Identification/runs/repro_20260806/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt",
+        / "Identification/runs/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt",
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     generator = _load_generator_module()
-    nominal = generator.load_model()
+    deployment_config = args.deployment_config.expanduser().resolve()
+    nominal = generator.load_model(deployment_config)
+    deployment = yaml.safe_load(deployment_config.read_text(encoding="utf-8"))
+    simulator_config = (ROOT / deployment["simulator_config"]).resolve()
     identified = generator.load_identified_model(
         args.identified_json, nominal, args.identified_checkpoint
     )
@@ -275,10 +285,22 @@ def main() -> None:
     runs = {}
     for name, roll, pitch in cases:
         runs[name] = _simulate(
-            generator, identified_controller, roll, pitch, args.collective, args.duration_s
+            generator,
+            identified_controller,
+            roll,
+            pitch,
+            args.collective,
+            args.duration_s,
+            simulator_config,
         )
     runs["nominal_roll_plus"] = _simulate(
-        generator, nominal_controller, +12.0, 0.0, args.collective, args.duration_s
+        generator,
+        nominal_controller,
+        +12.0,
+        0.0,
+        args.collective,
+        args.duration_s,
+        simulator_config,
     )
 
     results: dict[str, Any] = {}
@@ -320,6 +342,8 @@ def main() -> None:
     antisymmetry = np.mean(
         np.abs((roll_plus_cmd[1:10, 2:] + roll_minus_cmd[1:10, 2:]))
     )
+    antisymmetry_ok = bool(antisymmetry < 0.02)
+    polarity_ok &= antisymmetry_ok
     nominal_accel = _initial_axis_response(runs["nominal_roll_plus"], "x")
     identified_accel = _initial_axis_response(runs["roll_plus"], "x")
     polarity_agreement = bool(
@@ -329,7 +353,7 @@ def main() -> None:
     polarity_ok &= polarity_agreement
     results["antisymmetry"] = {
         "mean_servo_cmd_sum_deg": float(antisymmetry),
-        "ok": bool(antisymmetry < 0.02),
+        "ok": antisymmetry_ok,
     }
     results["nominal_agreement"] = {
         "nominal_roll_accel_rad_s2": nominal_accel,

@@ -44,9 +44,11 @@ ACTIVE_FILL_S = 0.3
 RELEASE_RATE_RAD_S = 0.5
 RELEASE_TILT_CHANGE_DEG = 0.7
 RELEASE_SUSTAIN_SAMPLES = 25
+SCAN_STRIDE_SAMPLES = 25
 DISTURBANCE_LEVEL_DEG = 4.0
 DISTURBANCE_ONSET_DEG = 8.0
 DISTURBANCE_PEAK_DEG = 12.0
+MAX_SATURATION_FRACTION = 0.5
 
 TIER_A = "A"
 TIER_B = "B"
@@ -259,6 +261,8 @@ def _hard_accept(
         return "peak_tilt_out_of_range"
     if metrics["peak_rate_rad_s"] > 20.0:
         return "peak_rate_out_of_range"
+    if metrics["saturation_fraction"] > MAX_SATURATION_FRACTION:
+        return "saturation_fraction_out_of_range"
     return None
 
 
@@ -302,8 +306,23 @@ def _candidate_windows(
             (max(epoch_start, onset - PRE_RELEASE_SAMPLES), "disturbance")
             for onset in _disturbance_events(tilt, active_raw, epoch_start, epoch_stop)
         )
+        # Event-only sampling misses useful closed-loop disturbances in ordinary
+        # manual flights that never cross the conservative tilt thresholds.
+        # Scan every fully valid, continuously active run while retaining all
+        # existing window-level hard checks and the canonical length/rate.
+        for run_start, run_stop in _runs(active_raw):
+            last_start = run_stop - WINDOW_STEPS
+            if last_start < run_start:
+                continue
+            scan_starts = range(
+                run_start, last_start, SCAN_STRIDE_SAMPLES
+            )
+            starts.extend((start, "closed_loop_scan") for start in scan_starts)
+            if (last_start - run_start) % SCAN_STRIDE_SAMPLES:
+                starts.append((last_start, "closed_loop_scan"))
+        starts = sorted(set(starts))
         takeoff_remaining = True
-        for start, kind in sorted(starts):
+        for start, kind in starts:
             if kind.startswith("takeoff_offset") and not takeoff_remaining:
                 continue
             stop = start + WINDOW_STEPS
@@ -476,16 +495,22 @@ def build(
     output_directory: Path,
     mlp_checkpoint: Path | None,
     quality_calibration: Path | None,
+    recursive: bool = False,
+    motor_pole_count: int = 28,
 ) -> Mapping[str, Any]:
     output_directory.mkdir(parents=True, exist_ok=True)
-    files = sorted(logs_directory.glob("*.ulg"))
+    files = sorted(
+        logs_directory.rglob("*.ulg")
+        if recursive
+        else logs_directory.glob("*.ulg")
+    )
     seen: set[str] = set()
     sources: list[Path] = []
     duplicates: list[tuple[str, str]] = []
     for path in files:
         digest = md5(path)
         if digest in seen:
-            duplicates.append((path.name, digest))
+            duplicates.append((path.relative_to(logs_directory).as_posix(), digest))
             continue
         seen.add(digest)
         sources.append(path)
@@ -496,27 +521,30 @@ def build(
     all_rejects: list[dict[str, Any]] = []
     per_log: list[dict[str, Any]] = []
     for path in sources:
+        source_name = path.relative_to(logs_directory).as_posix()
         try:
-            flight = parse_ulog(path)
+            flight = parse_ulog(path, motor_pole_count=motor_pole_count)
         except Exception as error:  # pragma: no cover - defensive
-            parse_errors[path.name] = str(error)
+            parse_errors[source_name] = str(error)
             continue
-        flights[path.name] = flight
-        print(f"parsed {path.name}: {len(flight.timestamp_us)} samples", flush=True)
+        flights[source_name] = flight
+        print(f"parsed {source_name}: {len(flight.timestamp_us)} samples", flush=True)
         candidates, rejects = _candidate_windows(flight)
         for entry in candidates:
-            entry["source"] = path.name
+            entry["source"] = source_name
         for entry in rejects:
-            entry["source"] = path.name
+            entry["source"] = source_name
         all_candidates.extend(candidates)
         all_rejects.extend(rejects)
         per_log.append(
             {
-                "source": path.name,
+                "source": source_name,
                 "md5": md5(path),
+                "logged_motor_pole_count": flight.logged_motor_pole_count,
+                "physical_motor_pole_count": flight.physical_motor_pole_count,
                 "duration_s": round((flight.timestamp_us[-1] - flight.timestamp_us[0]) / 1e6, 3),
-        "valid_fraction": float(flight.valid.mean()),
-        "max_contiguous_valid_run_s": _max_contiguous_valid_run_s(flight.valid),
+                "valid_fraction": float(flight.valid.mean()),
+                "max_contiguous_valid_run_s": _max_contiguous_valid_run_s(flight.valid),
                 "candidate_windows": len(candidates),
                 "rejected_windows": len(rejects),
                 "active_fraction": float(
@@ -525,7 +553,7 @@ def build(
             }
         )
         print(
-            f"  {path.name}: {len(candidates)} candidates, {len(rejects)} rejects",
+            f"  {source_name}: {len(candidates)} candidates, {len(rejects)} rejects",
             flush=True,
         )
 
@@ -618,6 +646,8 @@ def build(
         "input_directory": str(logs_directory),
         "total_ulg_files": len(files),
         "unique_ulg_files": len(sources),
+        "recursive": recursive,
+        "physical_motor_pole_count": motor_pole_count,
         "duplicates": duplicates,
         "parse_errors": parse_errors,
         "sample_hz": SAMPLE_HZ,
@@ -667,6 +697,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mlp-checkpoint", type=Path)
     parser.add_argument("--quality-calibration", type=Path)
+    parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--motor-pole-count", type=int, default=28)
     return parser
 
 
@@ -677,6 +709,8 @@ def main() -> None:
         args.output,
         args.mlp_checkpoint,
         args.quality_calibration,
+        args.recursive,
+        args.motor_pole_count,
     )
 
 

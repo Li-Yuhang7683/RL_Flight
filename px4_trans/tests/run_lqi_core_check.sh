@@ -13,6 +13,13 @@ trap 'rm -rf "$WORK"' EXIT
 
 g++ -std=c++17 -O2 -Wall -Wextra -Werror \
 	-I"$ROOT/px4/src/modules/nn_control" \
+	"$ROOT/tests/motor_output_map_check.cpp" \
+	-o "$WORK/motor_output_map_check"
+
+"$WORK/motor_output_map_check"
+
+g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+	-I"$ROOT/px4/src/modules/nn_control" \
 	"$ROOT/tests/lqi_core_check.cpp" \
 	-o "$WORK/lqi_core_check"
 

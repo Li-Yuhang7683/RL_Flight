@@ -434,16 +434,22 @@ CONFIG_NN_CONTROL_BACKEND_HYBRID=y
 后续换权重只需修改部署清单并重新生成。参考系与接口契约详见
 `px4_trans/LQI_NOMINAL_PORT_zh.md`。生成器同时维护
 黄金向量（`px4_trans/tests/lqi_golden.hpp`）与主机一致性检查
-（`px4_trans/tests/run_lqi_core_check.sh`）。`HYBRID` 仍是未实现骨架，实现放在
+（`px4_trans/tests/run_lqi_core_check.sh`）。地面站子模式门控另有独立主机检查
+`px4_trans/tests/run_ground_station_gate_check.sh`。`HYBRID` 仍是未实现骨架，实现放在
 `HybridControllerBackend.cpp`。执行器输出由 `NN_LQI_OUTPUT_EN` 参数门控，
 默认 `0`，在完成台架/HIL 验证前不得置 `1`。
 
 2026-08-12 起新增辨识模型版本：真机日志离线辨识的 19 状态复合 LQI
 （`LqiCompositeCore.hpp` + `LqiIdentifiedModel.hpp`），原有 13 状态标称权重
 保持不动，由 `NN_LQI_MODEL`（0=标称，1=辨识）在 `ln` 模块启动时选择。
+当前 direct-controller 固件默认在启动脚本中设置 `NN_LQI_MODEL=1`，即默认
+运行 19 状态控制器。
 详见 `px4_trans/LQI_NOMINAL_PORT_zh.md` 的“辨识模型版本”一节；SimEnv 闭环
 极性检查结果为
-`Identification/datasets/real_logs_26_8_12_v1/polarity_check_identified_lqi.json`。
+`Identification/datasets/real_logs_26_10_26_v4/polarity_check_basic_use_8s.json`。
+2026-10-26 降振标定载荷的辨识 checksum 为 `0x1716d847`，日志质量门控已通过；
+启动脚本强制使用 28 磁极电机的 RPM 换算，并由新 10 点电机表吸收最终 0.5 输出
+映射。该固件通过主机和 SimEnv 检查，但仍需台架/HIL/实机 shadow 验证。
 
 从 `RL_Flight/` 根目录执行以下完整命令：
 
@@ -451,8 +457,8 @@ CONFIG_NN_CONTROL_BACKEND_HYBRID=y
 env \
   CCACHE_DISABLE=1 \
   MAKEFLAGS= \
-  PATH="$PWD/.venv/bin:$PATH" \
-  PYTHON_EXECUTABLE="$PWD/.venv/bin/python" \
+  PATH="$PWD/px4_trans/px4/.venv/bin:$PATH" \
+  PYTHON_EXECUTABLE="$PWD/px4_trans/px4/.venv/bin/python" \
   make -C px4_trans/px4 micoair_h743-v2_nncontrol
 ```
 
@@ -570,6 +576,20 @@ nn_control status
 param show SYS_AUTOSTART
 ```
 
+地面站位置闭环与 RC 通道 8 模式槽 6 的接口、GS-Link v1 消息格式、4 Mbaud 串口参数和验证步骤
+见 [`GROUND_STATION_POSITION_LINK_zh.md`](GROUND_STATION_POSITION_LINK_zh.md)。
+位置环在地面站运行；飞控接收的是归一化四轴虚拟遥控量，不是位置目标。串口协议见
+[`GS_LINK_PROTOCOL_V1_zh.md`](GS_LINK_PROTOCOL_V1_zh.md)；当前固件已由 `gs_link`
+独占串口 1，MAVLink 不再占用 TELEM1。GS-Link v1 基础遥测含姿态、两路电机转速、
+电源状态和实际 RC 通道；位置/速度需另开可选 `DATA_NAV` 或使用其他链路。
+地面站输入默认启用（`NN_GS_EN=1`），但其输入选择与执行器授权相互独立：
+`TAKEOFF`/`LAND`/`ABORT` 仍返回 `UNSUPPORTED`，执行器输出继续受
+`NN_LQI_OUTPUT_EN` 和 Commander 安全门控控制。
+
+`nn_control` 会注册 PX4 外部模式 `Ground Station`。22001 机架预留外部模式哈希槽，
+使其稳定分配为 External Mode 2，并通过 `RC_MAP_FLTMODE=8` 将 RC 模式槽 6
+（`COM_FLTMODE6=101`）映射到该模式；模式槽 1 保持 Manual/RC。
+
 检查输入和执行器主题：
 
 ```text
@@ -590,6 +610,12 @@ listener actuator_servos_trim
 | M1/M2（PWM 1/2） | 上桨/下桨，Motor 1/2 | TIM1 | PWM 400 Hz |
 | M6（PWM 6） | Servo 1 | TIM3 | PWM 333 Hz |
 | M7/M8（PWM 7/8） | Servo 2/3 | TIM4 | PWM 333 Hz |
+
+两路电机在所有控制器后端和手动输入来源（含 RC 与 GS-Link）完成控制计算后，
+统一经过最终归一化输出映射：`motor_out = 0.5 * motor_controller`。因此控制器域
+满油门 `1.0` 对应最终 `0.5`，零油门仍为 `0`；三路舵机不缩放。该映射位于
+`nn_control` 发布 `actuator_motors` 之前，LQI 内部的增益、观察器和 `±0.2`
+上下桨差限幅仍在原指令尺度运行。
 
 未使用的 M3/M4/M5/M9/M10 在 22001 机架中显式设置为 `Disabled`。这里的
 `Motor 1/2` 和 `Servo 1/2/3` 是 PX4 输出功能，`M1/M2/M6/M7/M8` 是飞控板上的
@@ -648,5 +674,8 @@ LQR 后端现在计算真实 LQI 输出，但执行器权威仍由 `NN_LQI_OUTPU
 - 始终显式指定 `.venv`，不要依赖当前终端碰巧激活的 Conda 环境；
 - `nn_control` 当前直接发布 `actuator_motors` 和 `actuator_servos`，不会经过 Control
   Allocator；
+- 地面站链路只是 RC 解锁、通道 8 模式槽 6、External Mode 状态和
+  链路新鲜度共同允许时的辅助输入；它不能绕过 `NN_LQI_OUTPUT_EN`、Commander
+  或执行器失效保护；
 - 接入真实模型后，必须重新完成无桨、台架、故障注入、SIL/HIL 和执行器映射验证；
 - 在模型、输出映射和失效保护全部验证完成前，不得进行带桨测试。
