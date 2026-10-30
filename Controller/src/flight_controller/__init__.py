@@ -1,6 +1,7 @@
 from .base import FlightController
 from .classical import HybridPIDLQRController, LQRController, PIDController
 from .config import load_controller_config
+from .coaxial_collective import CoaxialCollectiveServoController
 from .factory import controller_types, create_controller, register_controller
 from .external_upper import compose_external_upper_command
 from .neural import NeuralNetworkController
@@ -17,6 +18,7 @@ __all__ = [
     "ControllerOutput",
     "ControllerReference",
     "ControllerState",
+    "CoaxialCollectiveServoController",
     "FlightController",
     "HybridPIDLQRController",
     "LQRController",

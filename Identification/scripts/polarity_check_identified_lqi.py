@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Closed-loop polarity check for the embedded identified 19-state LQI.
 
-The firmware payload is generated from
-``Identification/datasets/real_logs_26_10_26_v1/offline_identification_v7_hybrid.json``
+The firmware payload is generated from the airframe-specific manifest; the
+current checked-in payload belongs to
+``Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json``
 by ``px4_trans/tools/generate_lqi_backend.py``.  This script rebuilds the
 exact payload and runs the exact generator mirror of ``LqiCompositeCore``
 against SimEnv:
@@ -32,6 +33,14 @@ from typing import Any, Mapping
 import numpy as np
 import torch
 import yaml
+
+from flight_identification.airframe import (
+    DEFAULT_REGISTRY,
+    airframe_provenance,
+    file_sha256,
+    resolve_airframe,
+    validate_airframe_payload,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -248,13 +257,13 @@ def main() -> None:
     parser.add_argument(
         "--deployment-config",
         type=Path,
-        default=ROOT / "px4_trans/configs/lqi_nominal_deployment_v2.yaml",
+        default=ROOT / "px4_trans/configs/lqi_airframe_1.yaml",
     )
     parser.add_argument(
         "--identified-json",
         type=Path,
         default=ROOT
-        / "Identification/datasets/real_logs_26_10_26_v1/offline_identification_v7_hybrid.json",
+        / "Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json",
     )
     parser.add_argument(
         "--identified-checkpoint",
@@ -262,6 +271,8 @@ def main() -> None:
         default=ROOT
         / "Identification/runs/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt",
     )
+    parser.add_argument("--airframe-id", default="airframe-1")
+    parser.add_argument("--airframe-registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -270,8 +281,20 @@ def main() -> None:
     nominal = generator.load_model(deployment_config)
     deployment = yaml.safe_load(deployment_config.read_text(encoding="utf-8"))
     simulator_config = (ROOT / deployment["simulator_config"]).resolve()
+    identified_json = args.identified_json.expanduser().resolve()
+    report = json.loads(identified_json.read_text(encoding="utf-8"))
+    report_airframe = validate_airframe_payload(
+        report, args.airframe_id, artifact_name=str(identified_json)
+    )
+    airframe_record = resolve_airframe(
+        report_airframe["airframe_id"], args.airframe_registry
+    )
+    airframe = airframe_provenance(airframe_record)
     identified = generator.load_identified_model(
-        args.identified_json, nominal, args.identified_checkpoint
+        identified_json,
+        nominal,
+        args.identified_checkpoint,
+        airframe_record=airframe_record,
     )
     identified_controller = CompositeLqiController(identified)
     nominal_controller = NominalLqiController(nominal)
@@ -303,7 +326,12 @@ def main() -> None:
         simulator_config,
     )
 
-    results: dict[str, Any] = {}
+    results: dict[str, Any] = {
+        "schema_version": 1,
+        "airframe": airframe,
+        "identification_artifact_sha256": file_sha256(identified_json),
+        "model_checksum": f"0x{generator.composite_checksum(identified):08x}",
+    }
     polarity_ok = True
     for name in ("roll_plus", "roll_minus", "pitch_plus", "pitch_minus"):
         records = runs[name]

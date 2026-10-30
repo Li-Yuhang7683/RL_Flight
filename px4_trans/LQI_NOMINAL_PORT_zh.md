@@ -106,9 +106,10 @@ LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）�
 - `NN_LQI_MODEL=0`：标称 13 状态 LQI（可运行选择）；
 - `NN_LQI_MODEL=1`：真机辨识 19 状态复合 LQI（`lqi_identified`）。
 
-当前 direct-controller 固件的启动脚本会在 `nn_control start` 前设置
-`NN_LQI_MODEL=1`，因此默认运行 19 状态控制器；参数仍可在运行时改回 `0`，
-但修改后需要重启 `nn_control`。执行器输出仍由 `NN_LQI_OUTPUT_EN` 统一门控。
+历史标定固件曾在 `nn_control start` 前设置 `NN_LQI_MODEL=1`。2026-10-29 起
+当前固件默认设置 `NN_LQI_MODEL=2`，运行后文“双电机总距/差模模型”；参数仍可
+选择 `0/1`，但修改后需要重启 `nn_control`。执行器输出仍由
+`NN_LQI_OUTPUT_EN` 统一门控。
 
 19 状态顺序：
 
@@ -126,8 +127,11 @@ LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）�
 - 参考系、四元数、摇杆适配、上下桨差动限幅、饱和冻结积分等约定与标称版一致。
 - 新 ABI 位于 `LqiCompositeControllerModel.hpp`，算法位于
   `LqiCompositeCore.hpp`，数值载荷由
-  `Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_basic_use.json`
+  `Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json`
   经生成器写入 `LqiIdentifiedModel.hpp`（禁止手改）。
+- 当前载荷显式绑定 `airframe-1`。生成、部署和运行时检查契约见
+  `Identification/AIRFRAME_PROVENANCE_zh.md`；`NN_AIRFRAME_ID` 与模型内嵌机架
+  编号不一致时执行器输出被禁止。
 - 2026-10-26 初版基本可用标定载荷的 model checksum 为 `0x653927a7`，权重字节数为
   580；10 点电机表在控制器命令域中已经吸收最终 `0.5` 输出映射。日志特征质量门控
   已通过。初版 `p/q=0.2` 在实机上仍出现约 5–7 Hz 极限环，因此降振版把 p/q
@@ -166,3 +170,21 @@ LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）�
 roll 残差 0.16°→0.13°、pitch 残差 0.08°→0.003°；打杆阶跃 t90 由约 0.44 s
 缩短到约 0.39 s，四个方向极性检查全部正确、输出有界。辨识模型极点半径由
 0.9956 改善到 0.9912。
+
+## 双电机总距/差模模型（`NN_LQI_MODEL=2`）
+
+2026-10-29 新增第三套载荷 `lqi_coaxial_collective`，旧模型 0/1 保持不变：
+
+- 飞手总距映射目标竖直加速度；
+- z 加速度 PI 控制双电机共模；
+- 双电机共模/差模分配总推力与 yaw；
+- 8 状态姿态 LQI 输出三轴力矩；
+- 三舵机只用于滚转/俯仰。
+
+上下桨 PWM–转速表统一来自
+`log/电机标定/3100kv上桨_空中.csv`，按固件最终 `0.5` 输出映射转换到控制器命令域。
+载荷、黄金向量和配置由
+`px4_trans/tools/generate_coaxial_collective_backend.py` 生成，部署配置为
+`px4_trans/configs/lqi_coaxial_collective_airframe1.yaml`。当前启动脚本和参数默认
+选择模型 2；完整结果和限制见
+`Identification/LQI_COAXIAL_COLLECTIVE_SERVO_3100KV_FIRMWARE_zh.md`。

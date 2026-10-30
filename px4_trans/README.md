@@ -419,7 +419,9 @@ CONFIG_NN_CONTROL_BACKEND_HYBRID=y
 ```
 
 当前工程可用的默认项是 `LQR`。`NEURAL` 仍使用占位模型，`HYBRID` 仍是未实现骨架，
-不能用于真机飞行。LQR 后端实现为方案 A 的“外部集电 + 4 输出 LQI”：
+不能用于真机飞行。`NN_LQI_MODEL=0/1` 保持方案 A 的“外部上桨 + 4 输出 LQI”；
+2026-10-29 起 `NN_LQI_MODEL=2` 为新的“飞手总距 + 双电机共模/差模 + 三舵机
+滚转/俯仰”模型。旧模型实现仍为：
 上桨归飞手/RC 油门（`rc_throttle` 映射到 `motors[0]`），LQI 控制下桨与三路舵机，
 下桨的集体基准跟随上桨开度，再叠加 LQI 修正。13 状态中上桨/下桨优先使用
 双向 DShot 的 `esc_status` 转速反馈（按
@@ -442,14 +444,22 @@ CONFIG_NN_CONTROL_BACKEND_HYBRID=y
 2026-08-12 起新增辨识模型版本：真机日志离线辨识的 19 状态复合 LQI
 （`LqiCompositeCore.hpp` + `LqiIdentifiedModel.hpp`），原有 13 状态标称权重
 保持不动，由 `NN_LQI_MODEL`（0=标称，1=辨识）在 `ln` 模块启动时选择。
-当前 direct-controller 固件默认在启动脚本中设置 `NN_LQI_MODEL=1`，即默认
-运行 19 状态控制器。
+2026-10-29 起 direct-controller 固件启动脚本设置 `NN_LQI_MODEL=2`，运行新的
+双电机总距/差模模型；模型0/1仍可手动选择。新模型上下桨统一使用
+`log/电机标定/3100kv上桨_空中.csv`，并按最终 `0.5` 输出映射转入控制器命令域。
+完整设计与固件哈希见
+`Identification/LQI_COAXIAL_COLLECTIVE_SERVO_3100KV_FIRMWARE_zh.md`。
+识别模型同时绑定 `airframe_id` 和 `airframe_number`。机架注册、数据集/报告/
+固件生成链路以及运行时 `NN_AIRFRAME_ID` 检查见
+`Identification/AIRFRAME_PROVENANCE_zh.md`；当前 `0x1716d847` 载荷属于
+`airframe-1`，不得直接当作机架2控制器。
 详见 `px4_trans/LQI_NOMINAL_PORT_zh.md` 的“辨识模型版本”一节；SimEnv 闭环
 极性检查结果为
 `Identification/datasets/real_logs_26_10_26_v4/polarity_check_basic_use_8s.json`。
-2026-10-26 降振标定载荷的辨识 checksum 为 `0x1716d847`，日志质量门控已通过；
-启动脚本强制使用 28 磁极电机的 RPM 换算，并由新 10 点电机表吸收最终 0.5 输出
-映射。该固件通过主机和 SimEnv 检查，但仍需台架/HIL/实机 shadow 验证。
+2026-10-26 降振标定载荷的辨识 checksum 为 `0x1716d847`；2026-10-29 模型2
+保留该机架辨识来源，并使用上桨空中标定生成新配平、油门表和姿态载荷。启动脚本
+强制使用 28 磁极电机的 RPM 换算，再由电机表吸收最终 0.5 输出映射。新固件通过
+主机和 SimEnv 检查，但仍需台架/HIL/实机 shadow 验证。
 
 从 `RL_Flight/` 根目录执行以下完整命令：
 
@@ -574,6 +584,7 @@ reboot
 ```text
 nn_control status
 param show SYS_AUTOSTART
+param show NN_AIRFRAME_ID
 ```
 
 地面站位置闭环与 RC 通道 8 模式槽 6 的接口、GS-Link v1 消息格式、4 Mbaud 串口参数和验证步骤

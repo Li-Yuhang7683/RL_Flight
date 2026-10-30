@@ -1,3 +1,7 @@
+/* Generated identified-LQI vectors.
+ * Airframe: airframe-1 (机架1)
+ */
+
 #pragma once
 
 struct LqiIdentifiedGoldenVector {

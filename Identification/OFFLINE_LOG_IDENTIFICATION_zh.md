@@ -155,6 +155,7 @@ env PYTHONNOUSERSITE=1 \
   PYTHONPATH=Identification/src:Controller/src:SimEnv/src \
   /home/ryan/miniconda3/envs/rl-flight/bin/python \
   -m flight_identification.offline_log_inference \
+  --airframe-id airframe-1 \
   --checkpoint Identification/runs/<run>/identifier.pt \
   --logs /path/to/closed_loop_flights.npz \
   --experiment-config Identification/configs/lqr_sim2real_micro_offline_logs_v2.yaml \
@@ -163,6 +164,10 @@ env PYTHONNOUSERSITE=1 \
   --secondary-output-axes roll,pitch \
   --device cuda:0 --analysis-gain-blend 0.9
 ```
+
+输入 NPZ 必须带有 `airframe.json` 侧车或内嵌机架身份。输出报告的
+`airframe` 与日志包不一致时工具直接失败；机架注册和多模型命名规则见
+[AIRFRAME_PROVENANCE_zh.md](AIRFRAME_PROVENANCE_zh.md)。
 
 推荐的离线组合使用 TCN 的 roll/pitch 响应和 MLP 的 yaw 响应（验证集逐轴 `R2`
 确定；BiGRU 未在任何轴胜出）。输入使用一份原始 500 Hz NPZ，工具把原始序列交给

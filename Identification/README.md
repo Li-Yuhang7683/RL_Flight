@@ -1,5 +1,11 @@
 # LQR Identification Experiment
 
+Airframe identity is part of the dataset, identification-result, generated-LQI,
+and runtime contracts. The registry, current assignment (`airframe-1` is the
+2026-10-26 `pq03` model), collection rules, and generation commands are in
+[AIRFRAME_PROVENANCE_zh.md](AIRFRAME_PROVENANCE_zh.md). Never mix logs from
+another physical airframe into an existing dataset directory.
+
 The micro-coaxial physical-domain Sim2Real design, scale derivations, conditional
 trim-feasibility sampling, LQI weights, identification results, and paired
 nonlinear control audit are documented in

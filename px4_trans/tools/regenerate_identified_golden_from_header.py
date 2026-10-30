@@ -60,7 +60,7 @@ def load_model() -> dict[str, np.ndarray | np.float32]:
         "latent_decay": parse_array(text, "kLatentDecay"),
         "latent_input": parse_array(text, "kLatentInput").reshape(3, 3, 3),
         "integral_limit": parse_array(text, "kIntegralLimit"),
-        "motor_table": parse_array(text, "kMotorTable").reshape(7, 2),
+        "motor_table": parse_array(text, "kMotorTable").reshape(-1, 2),
         "manual_command_decay": parse_array(text, "kManualCommandDecay"),
         "dt": dt,
         "upper_trim": upper_trim,
@@ -79,24 +79,47 @@ def load_model() -> dict[str, np.ndarray | np.float32]:
         "latent_decay": (3,),
         "latent_input": (3, 3, 3),
         "integral_limit": (3,),
-        "motor_table": (7, 2),
         "manual_command_decay": (3,),
     }
+    if model["motor_table"].ndim != 2 or model["motor_table"].shape[1] != 2:
+        raise ValueError("motor_table must contain command/speed pairs")
     for name, shape in expected_shapes.items():
         if model[name].shape != shape:
             raise ValueError(f"{name}: expected {shape}, got {model[name].shape}")
     return model
 
 
+def load_airframe() -> dict[str, object]:
+    from flight_identification.airframe import (
+        airframe_provenance,
+        resolve_airframe,
+    )
+
+    text = HEADER.read_text(encoding="utf-8")
+    match = re.search(r'static constexpr char kAirframeId\[\]\{"([^"]+)"\};', text)
+    number = re.search(
+        r"static constexpr uint32_t kAirframeNumber\{(\d+)u\};", text
+    )
+    if match is None or number is None:
+        raise ValueError("generated header has no airframe identity")
+    airframe = airframe_provenance(resolve_airframe(match.group(1)))
+    if int(airframe["airframe_number"]) != int(number.group(1)):
+        raise ValueError("generated header airframe ID/number disagree with registry")
+    return airframe
+
+
 def main() -> None:
+    sys.path.insert(0, str(ROOT / "Identification/src"))
     sys.path.insert(0, str(TOOLS))
     import generate_lqi_backend as generator
 
     model = load_model()
+    airframe = load_airframe()
     vectors = generator.composite_golden_vectors(model)
-    generator.write_composite_golden(vectors)
+    generator.write_composite_golden(vectors, airframe=airframe)
     print(
-        f"regenerated {len(vectors)} identified-LQI vectors for checksum "
+        f"regenerated {len(vectors)} identified-LQI vectors for "
+        f"{airframe['airframe_id']} checksum "
         f"0x{generator.composite_checksum(model):08x}"
     )
 

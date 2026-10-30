@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "artifact_type": "raw_ulog_collection",
+  "airframe": {
+    "schema_version": 1,
+    "airframe_id": "airframe-1",
+    "airframe_number": 1,
+    "display_name": "机架1",
+    "platform_family": "micoair_h743-v2_micro_coaxial_3servo",
+    "controller_contract": "pilot_acceleration_dual_motor_common_differential_servo_roll_pitch",
+    "status": "manual_calibration_failed_flight"
+  },
+  "bindings": {
+    "use_for_identification": false,
+    "role": "manual_parameter_calibration",
+    "controller_model": 2,
+    "model_checksum_before_manual_v2": "0xd5681c3f",
+    "note": "These logs confirm airframe-1 despite the older parent flight2 metadata. Keep them out of precise identification; use them only for manual calibration and failure regression."
+  }
+}

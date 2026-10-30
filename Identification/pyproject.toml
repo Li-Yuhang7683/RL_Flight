@@ -32,6 +32,7 @@ flight-identification-sim2real-parameter-diagnostics = "flight_identification.si
 flight-identification-sim2real-composite-train = "flight_identification.sim2real_composite_training:main"
 flight-identification-sim2real-composite-eval = "flight_identification.sim2real_composite_evaluation:main"
 flight-identification-offline-log-infer = "flight_identification.offline_log_inference:main"
+flight-identification-airframe = "flight_identification.airframe:main"
 flight-identification-offline-quality-calibrate = "flight_identification.offline_quality_calibration:main"
 flight-identification-offline-quality-stratify = "flight_identification.offline_quality_stratification:main"
 flight-identification-sim2real-bad-point-screen = "flight_identification.sim2real_bad_point_screening:main"

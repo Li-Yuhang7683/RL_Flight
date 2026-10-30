@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "artifact_type": "px4_embedded_lqi_model",
+  "airframe": {
+    "schema_version": 1,
+    "airframe_id": "airframe-1",
+    "airframe_number": 1,
+    "display_name": "机架1",
+    "platform_family": "micoair_h743-v2_micro_coaxial_3servo",
+    "controller_contract": "external_upper_4_output",
+    "status": "identified"
+  },
+  "model_index": 1,
+  "model_checksum": "0x1716d847",
+  "required_parameter": {
+    "name": "NN_AIRFRAME_ID",
+    "value": 1
+  },
+  "sources": {
+    "deployment_config": "px4_trans/configs/lqi_airframe_1.yaml",
+    "identification_report": "Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json",
+    "identification_report_sha256": "344be729a1cfad46231b639d470b62ee0bb60c1216c130ae27042b34e0272571",
+    "binding_checkpoint": "Identification/runs/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt",
+    "binding_checkpoint_sha256": "ebdab15483ba22530656e8aebbf33e644a009373e8284e8a060229b54928117d"
+  },
+  "generated": {
+    "active_header": "px4_trans/px4/src/modules/nn_control/LqiIdentifiedModel.hpp",
+    "active_header_sha256": "96ef8e57a044b94816648d8a8e316677351abac933a0050925d84b60ea79cf55",
+    "archived_header": "px4_trans/generated/airframe-1/LqiIdentifiedModel.hpp",
+    "archived_header_sha256": "96ef8e57a044b94816648d8a8e316677351abac933a0050925d84b60ea79cf55",
+    "golden_header": "px4_trans/tests/lqi_identified_golden.hpp",
+    "golden_header_sha256": "0ea8d5a0bfb99f5d7b95bb715870ad1bd5a50fa48a75b8c6abd8a6f618c1537b",
+    "golden_json": "px4_trans/tests/lqi_identified_golden.json",
+    "golden_json_sha256": "e9b858e1b5589f54879302c9dbd62c6b3014ee0b7de6408baab86de2203f22fb"
+  },
+  "weight_bytes": 580,
+  "firmware_artifact": {
+    "path": "px4_trans/px4/build/micoair_h743-v2_nncontrol/micoair_h743-v2_nncontrol.px4",
+    "sha256": "8e6c30017a9e4523fb4995f968787c88e20a929c5131d6dbabc2a899c83eccd2",
+    "size_bytes": 1058454
+  }
+}

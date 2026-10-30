@@ -1,5 +1,14 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
+  "airframe": {
+    "schema_version": 1,
+    "airframe_id": "airframe-1",
+    "airframe_number": 1,
+    "display_name": "机架1",
+    "platform_family": "micoair_h743-v2_micro_coaxial_3servo",
+    "controller_contract": "external_upper_4_output",
+    "status": "identified"
+  },
   "vectors": [
     {
       "attitude_q_wb": [

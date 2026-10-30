@@ -1,5 +1,8 @@
 schema_version: 1
 
+# Legacy path retained for existing scripts. New generation and deployment
+# work must use lqi_airframe_1.yaml, which carries the airframe binding.
+
 # 2026-10-26 real-vehicle LQI deployment:
 # - motor RPM feedback assumes 28 physical motor poles;
 # - the final physical motor command remains 0.5 * controller command;

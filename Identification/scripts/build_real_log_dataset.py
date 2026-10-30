@@ -7,6 +7,7 @@ Usage (from the repository root):
       .venv/bin/python Identification/scripts/build_real_log_dataset.py \
       --logs Identification/real_log/26.8.12 \
       --output Identification/datasets/real_logs_26_8_12_v1 \
+      --airframe-id airframe-1 \
       --mlp-checkpoint Identification/runs/repro_20260806/sim2real_offline_logs_step_response_mlp_v7/identifier.pt
 
 The output directory contains:
@@ -14,6 +15,7 @@ The output directory contains:
     windows.json        per-window selection report
     windows_summary.png one panel per accepted window (attitude/rate/command)
     build_report.json   per-log parse and selection summary
+    airframe.json       stable physical-airframe provenance
 """
 
 from __future__ import annotations
@@ -27,6 +29,13 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import torch
 
+from flight_identification.airframe import (
+    DEFAULT_REGISTRY,
+    airframe_provenance,
+    resolve_airframe,
+    validate_airframe_payload,
+    write_airframe_sidecar,
+)
 from flight_identification.real_log_adapter import (
     FEATURE_NAMES,
     ParsedFlight,
@@ -495,9 +504,28 @@ def build(
     output_directory: Path,
     mlp_checkpoint: Path | None,
     quality_calibration: Path | None,
+    airframe_id: str,
+    airframe_registry: Path | None = None,
     recursive: bool = False,
     motor_pole_count: int = 28,
 ) -> Mapping[str, Any]:
+    airframe_record = resolve_airframe(airframe_id, airframe_registry)
+    airframe = airframe_provenance(airframe_record)
+    raw_sidecar = logs_directory / "airframe.json"
+    if not raw_sidecar.exists():
+        raise ValueError(
+            f"{logs_directory} has no airframe.json; raw identification logs "
+            "must be explicitly bound to a registered airframe"
+        )
+    raw_payload = json.loads(raw_sidecar.read_text(encoding="utf-8"))
+    validate_airframe_payload(
+        raw_payload, airframe_id, artifact_name=str(raw_sidecar)
+    )
+    if raw_payload.get("bindings", {}).get("use_for_identification") is False:
+        raise ValueError(
+            f"{raw_sidecar} explicitly marks this log collection as "
+            "diagnostic-only and not usable for identification"
+        )
     output_directory.mkdir(parents=True, exist_ok=True)
     files = sorted(
         logs_directory.rglob("*.ulg")
@@ -613,6 +641,10 @@ def build(
             feature_names=np.asarray(FEATURE_NAMES, dtype="<U64"),
             sample_hz=np.float64(SAMPLE_HZ),
             valid_mask=bundle_valid,
+            airframe_id=np.asarray(airframe["airframe_id"]),
+            airframe_json=np.asarray(
+                json.dumps(airframe, ensure_ascii=False), dtype="<U512"
+            ),
             source_log=np.asarray(meta["source_log"], dtype="<U64"),
             window_start_us=np.asarray(meta["window_start_us"], dtype=np.int64),
             window_stop_us=np.asarray(meta["window_stop_us"], dtype=np.int64),
@@ -642,7 +674,8 @@ def build(
             )
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "airframe": airframe,
         "input_directory": str(logs_directory),
         "total_ulg_files": len(files),
         "unique_ulg_files": len(sources),
@@ -668,9 +701,20 @@ def build(
         json.dumps(report, indent=2, ensure_ascii=False, default=_json_default),
         encoding="utf-8",
     )
+    write_airframe_sidecar(
+        output_directory,
+        airframe_record,
+        artifact_type="real_log_identification_dataset",
+        bindings={
+            "input_directory": str(logs_directory),
+            "bundle": str(output_directory / "bundle.npz"),
+            "recursive": recursive,
+            "physical_motor_pole_count": motor_pole_count,
+        },
+    )
     (output_directory / "windows.json").write_text(
         json.dumps(
-            {"schema_version": 1, "windows": selected},
+            {"schema_version": 2, "airframe": airframe, "windows": selected},
             indent=2,
             ensure_ascii=False,
             default=_json_default,
@@ -695,6 +739,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--logs", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--airframe-id", required=True)
+    parser.add_argument("--airframe-registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--mlp-checkpoint", type=Path)
     parser.add_argument("--quality-calibration", type=Path)
     parser.add_argument("--recursive", action="store_true")
@@ -709,6 +755,8 @@ def main() -> None:
         args.output,
         args.mlp_checkpoint,
         args.quality_calibration,
+        args.airframe_id,
+        args.airframe_registry,
         args.recursive,
         args.motor_pole_count,
     )

@@ -1,5 +1,16 @@
 # 2026-10-26 新机械/电池构型真机日志辨识报告
 
+## 机架身份
+
+- `airframe_id`：`airframe-1`
+- 名称：机架1
+- 注册表：`Identification/configs/airframes.yaml`
+- 当前部署配置：`px4_trans/configs/lqi_airframe_1.yaml`
+- 当前标识模型：`0x1716d847`
+
+本文的数据、辨识结果和 `pq03` LQI 参数只属于机架1。`log/flight2` 的
+机架2诊断日志没有混入本数据集。
+
 ## 结论
 
 已按 500 Hz、2 s 整窗的 14 通道契约完成日志清洗，并使用 v7
