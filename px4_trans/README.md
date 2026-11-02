@@ -597,6 +597,13 @@ param show NN_AIRFRAME_ID
 `TAKEOFF`/`LAND`/`ABORT` 仍返回 `UNSUPPORTED`，执行器输出继续受
 `NN_LQI_OUTPUT_EN` 和 Commander 安全门控控制。
 
+双机 AIRLINK v1 由独立 `airlink` 模块实现，默认 `AIRLINK_ROLE=0`，在板级启动脚本中
+使用 UART2/GPS2 `/dev/ttyS1`、6 Mbaud 8N1。协议 ABI、固件状态机、QGC/NSH 操作、
+控制权接口和验证边界见 [`../Docs/AIRLINK_PROTOCOL_V1_zh.md`](../Docs/AIRLINK_PROTOCOL_V1_zh.md)
+与 [`../Docs/AIRLINK_FIRMWARE_zh.md`](../Docs/AIRLINK_FIRMWARE_zh.md)。配对 arm 只能经
+fresh `CONTROL_ENABLE` 和 `PAIR_ARM` 事务完成；`AIRLINK_PAIR_EN=1` 时 C_SINGLE 的
+普通 arming check 不会再成为绕过通道。
+
 `nn_control` 会注册 PX4 外部模式 `Ground Station`。22001 机架预留外部模式哈希槽，
 使其稳定分配为 External Mode 2，并通过 `RC_MAP_FLTMODE=8` 将 RC 模式槽 6
 （`COM_FLTMODE6=101`）映射到该模式；模式槽 1 保持 Manual/RC。
@@ -660,7 +667,330 @@ LQR 后端现在计算真实 LQI 输出，但执行器权威仍由 `NN_LQI_OUTPU
 故障注入、HIL 与执行器映射验证；QGC Actuators 页面负责底层输出方向、端点与中值
 标定，`PWM_MAIN_REV`、`PWM_MAIN_MINx/MAXx`、`NN_SV_TRIMx` 的语义不变。
 
-### 14.6 常见构建错误
+### 14.6 AIRLINK v1 PX4/NSH 调试指令
+
+本节适用于带有 `MODULES_AIRLINK=y` 的 `micoair_h743-v2_nncontrol` 固件。AIRLINK
+启动时默认：
+
+```text
+AIRLINK_ROLE=0
+AIRLINK_PAIR_EN=0
+device=/dev/ttyS1    # UART2/GPS2
+baud=6000000
+format=8N1
+```
+
+`AIRLINK_ROLE=0` 时链路停用。`NN_LQI_OUTPUT_EN` 默认也是 `0`，因此即使链路状态正常，
+执行器仍保持关闭。
+
+以下命令可直接在 QGC 的 **MAVLink Console** 或 USB/串口 NSH 中执行。
+
+#### 14.6.1 启动前检查
+
+两机 UART2/GPS2 的 TX/RX 必须交叉连接并共地。该端口原来若用于 GPS2，必须先将
+GPS2 配置停用并重启，避免 GPS 驱动和 AIRLINK 抢占 `/dev/ttyS1`：
+
+```text
+param show GPS_2_CONFIG
+```
+
+如果 `GPS_2_CONFIG` 不是 `0`，在 QGC 中设为 `0`，或执行：
+
+```text
+param set GPS_2_CONFIG 0
+param save
+reboot
+```
+
+确认本次固件和控制器配置：
+
+```text
+airlink help
+airlink status
+param show AIRLINK_ROLE
+param show AIRLINK_PAIR_EN
+param show AIRLINK_IMPACT
+param show AIRLINK_IMP_MS
+param show AIRLINK_FLIP_DEG
+param show AIRLINK_FLIP_MS
+param show AIRLINK_LAND_MS
+param show NN_LQI_MODEL
+param show NN_AIRFRAME_ID
+param show NN_LQI_OUTPUT_EN
+```
+
+本次构建应看到 `NN_LQI_MODEL=2`、`NN_AIRFRAME_ID=1`。正常启动后
+`airlink status` 至少应显示：
+
+```text
+port: /dev/ttyS1, baud: 6000000, open: 0, role: 0
+state: AIRLINK_DOWN
+open failures: 0
+```
+
+角色为 `0` 时 `open: 0` 是预期状态。
+
+#### 14.6.2 配置主从角色
+
+只能在 disarmed、没有 `PAIR_ACTIVE`/`PAIR_ARM_PENDING`、没有链路测试时修改角色。
+两机配置为相反角色：
+
+主机 A：
+
+```text
+airlink role master
+airlink pair on
+param save
+```
+
+从机 B：
+
+```text
+airlink role slave
+airlink pair on
+param save
+```
+
+也可以直接在 QGC 参数页设置：
+
+```text
+AIRLINK_ROLE=1    # master
+AIRLINK_ROLE=2    # slave
+AIRLINK_PAIR_EN=1
+```
+
+两机必须使用完全相同的五个降落阈值；这些阈值参与握手配置摘要。修改后先 disarm，
+再等待重新发现和握手。
+
+#### 14.6.3 观察发现、握手和链路状态
+
+在两机控制台分别持续观察：
+
+```text
+listener airlink_status
+```
+
+正常状态顺序：
+
+```text
+AIRLINK_DOWN
+  -> AIRLINK_DISCOVERED
+  -> LINK_HANDSHAKE_PENDING
+  -> AIRLINK_READY
+```
+
+两端都到达 `AIRLINK_READY` 后，重点核对：
+
+- 两机 `config CRC` 相同；
+- 两机 `peer` 会话非零且分别等于对端 `session`；
+- `fresh: peer/sensor/control` 在相应阶段持续刷新；
+- `crc/length/version/eof/session errors` 保持为 `0`；
+- `pair reattach latched=0`；
+- 两机 `pair mode=1`。
+
+`AIRLINK_READY` 只表示协议、角色、会话和配置完成握手，不表示已授权 arm 或控制。
+
+检查原始主题：
+
+```text
+listener airlink_status
+listener airlink_actuator_command
+listener airlink_pair_command
+listener airlink_test_result
+listener actuator_motors
+listener actuator_servos
+```
+
+其中：
+
+- 从机只有在 `PAIR_ACTIVE` 后才应看到新鲜的 `airlink_actuator_command.valid=1`；
+- 主机 C_PAIR 控制器应发布 `airlink_pair_command`；
+- `NN_LQI_OUTPUT_EN=0` 时最终 `actuator_motors.control` 和
+  `actuator_servos.control` 为 `NaN`；
+- 当前仓库尚未提供 `airlink_pair_command` 的 C_PAIR 算法发布者。
+
+#### 14.6.4 链路回环测试
+
+链路测试只由 master 发起，要求两端 disarmed、`AIRLINK_READY`，且没有
+`PAIR_ARM_PENDING`/`PAIR_ACTIVE`。默认测试参数为：
+
+```text
+airlink test --duration-ms 5000 --rate-hz 500 --payload-bytes 256
+```
+
+也可以只指定需要修改的参数：
+
+```text
+airlink test
+airlink test --duration-ms 1000
+airlink test --rate-hz 250 --payload-bytes 512
+```
+
+允许范围：
+
+- `--duration-ms`: `1000..10000`
+- `--rate-hz`: `1..500`
+- `--payload-bytes`: `32..512`
+
+超范围参数会直接报错，不会截断成另一个 `uint16_t` 数值后执行。
+
+提前结束：
+
+```text
+airlink aborttest
+```
+
+测试完成后查看：
+
+```text
+listener airlink_test_result
+```
+
+控制台会输出一行 `AIRLINK_TEST_JSON=...`，包含发送/回显、丢包、重复、乱序、
+RTT、抖动、吞吐、最大包间隔和链路中断统计。MAVLink STATUSTEXT 受 50 B 长度限制，
+只显示关键摘要；完整结果以 `airlink_test_result` 和控制台完整 JSON 为准。
+
+如果从机未进入测试或一直停在 `LINK_TEST_ACTIVE`，确认：
+
+- 命令是在 master 上执行；
+- 两机都处于 `AIRLINK_READY` 且 disarmed；
+- 没有收到 arm、`CONTROL_ENABLE` 或 `PAIR_ARM`；
+- 串口没有同时被 GPS2 占用。
+
+#### 14.6.5 手动检查控制事务
+
+以下命令用于台架/HIL 调试，不得在未验证时用于带桨测试。
+
+申请 fresh `CONTROL_ENABLE`：
+
+```text
+airlink enable
+```
+
+成功时状态会经历：
+
+```text
+AIRLINK_READY
+  -> PAIR_ENABLE_PENDING
+  -> PAIR_CONTROL_READY
+```
+
+`PAIR_CONTROL_READY` 是短窗口状态，从机若未及时收到 `PAIR_ARM` 或首帧控制命令，
+会回到 `AIRLINK_READY`。
+
+发起显式双机 arm 事务：
+
+```text
+airlink arm
+```
+
+QGC 的 `MAV_CMD_COMPONENT_ARM_DISARM` 或 RC/摇杆 arm 请求也会进入相同流程。
+正常顺序为：
+
+```text
+CONTROL_ENABLE ACK
+  -> PAIR_ARM
+  -> 从机执行本机 arming checks 并真正 armed
+  -> 从机 PAIR_ARM SUCCESS ACK
+  -> 主机执行本机 armed
+  -> 第一帧五路 C_PAIR 控制命令
+  -> PAIR_ACTIVE
+```
+
+当前仓库没有发布 `airlink_pair_command` 的 C_PAIR 控制器，因此执行
+`airlink arm` 通常会看到：
+
+```text
+AIRLINK pair arm refused: fresh pair command unavailable
+```
+
+这是预期的 fail-closed 行为。不要让两只飞机仅凭 `AIRLINK_READY` 或
+`PAIR_CONTROL_READY` 进入 arm。
+
+取消和撤销：
+
+```text
+airlink disarm
+airlink release
+airlink emergency
+```
+
+- `airlink disarm`：请求从机 disarm，并立即执行本机 disarm；
+- `airlink release`：撤销远端控制所有权；
+- `airlink emergency`：粘滞紧急撤销，后续普通心跳/命令不能自动恢复接管。
+
+#### 14.6.6 空中断链与 SINGLE_LANDING 检查
+
+`PAIR_ACTIVE` 后任一关键方向数据超过 `10 ms`，或从机清除
+`AIRLINK_CONTROL_ACTIVE`，会进入 `PAIR_LOST`。若本机 `AIRBORNE_LATCHED=1`：
+
+1. 若有 fresh GS-LINK 控制，则返回本地 C_SINGLE；
+2. 否则进入 `SINGLE_LANDING`，controller collective 使用 `0.25`；
+3. 冲击、翻转或超时后请求本地 disarm；
+4. `PAIR_REATTACH_LATCHED=1` 后不得重新拼接，直到两端重新上电。
+
+调试时检查：
+
+```text
+listener airlink_status
+listener gs_link_status
+listener actuator_motors
+listener actuator_servos
+```
+
+经验默认阈值：
+
+| 参数 | 默认值 |
+| --- | ---: |
+| `AIRLINK_IMPACT` | `35 m/s²` |
+| `AIRLINK_IMP_MS` | `20 ms` |
+| `AIRLINK_FLIP_DEG` | `70°` |
+| `AIRLINK_FLIP_MS` | `150 ms` |
+| `AIRLINK_LAND_MS` | `15000 ms` |
+
+这些阈值在 disarmed 阶段锁存，必须经过无桨台架/HIL 标定。不要通过重启一侧
+飞控或重启单个模块来清除 `PAIR_REATTACH_LATCHED`。
+
+#### 14.6.7 调试时重启 AIRLINK 模块
+
+仅在 disarmed、未激活、未进入 `PAIR_LOST` 的情况下使用：
+
+```text
+airlink stop
+airlink start -d /dev/ttyS1 -b 6000000
+airlink status
+```
+
+启动后角色和 pair mode 从参数恢复。若需要改变角色：
+
+```text
+airlink role off
+airlink role master
+airlink pair on
+```
+
+不要用模块重启代替严格的两端重新上电恢复流程。
+
+#### 14.6.8 常见问题
+
+| 现象 | 优先检查 |
+| --- | --- |
+| `open: 0` 且角色非 `0` | `/dev/ttyS1` 是否被 GPS2 占用；串口映射和模块是否启动 |
+| 一直 `AIRLINK_DOWN` | 两机角色是否分别为 master/slave、TX/RX 是否交叉、波特率是否均为 6 Mbaud |
+| 有 `AIRLINK_DISCOVERED` 但无 `READY` | 两机 config CRC/阈值是否一致、是否单向通信、capability 是否匹配 |
+| `session errors` 增长 | 对端是否重启、角色是否改变、是否混入旧会话帧 |
+| `crc/length/eof` 增长 | 检查共地、线长、屏蔽、6 Mbaud 信号质量和 DMA/串口丢字节 |
+| `AIRLINK_READY` 但 `airlink arm` 失败 | 两机 pair mode、RC/safety、reattach 锁存、C_PAIR 命令是否新鲜 |
+| `airlink_actuator_command.valid=0` | 从机是否 `PAIR_ACTIVE`、控制帧是否在 10 ms 内、会话是否匹配 |
+| `actuator_motors` 全为 `NaN` | `NN_LQI_OUTPUT_EN=0`、未 armed、failsafe、机架 ID 或模型不匹配 |
+| `PAIR_LOST` 后无法重新 arm | `PAIR_REATTACH_LATCHED=1`；按安全规则需要两端重新上电 |
+| 链路测试不启动 | 是否 master、两端是否 disarmed、是否有进行中的可靠事务或 GPS2 占用 |
+
+更完整的协议字段、状态机和安全边界见
+[`../Docs/AIRLINK_PROTOCOL_V1_zh.md`](../Docs/AIRLINK_PROTOCOL_V1_zh.md) 和
+[`../Docs/AIRLINK_FIRMWARE_zh.md`](../Docs/AIRLINK_FIRMWARE_zh.md)。
+
+### 14.7 常见构建错误
 
 | 提示或错误 | 原因 | 处理方式 |
 | --- | --- | --- |
@@ -677,7 +1007,7 @@ LQR 后端现在计算真实 LQI 输出，但执行器权威仍由 `NN_LQI_OUTPU
 排错时优先处理日志中的第一个致命错误。CMake 配置失败后出现的“构建目录不存在”等信息
 通常只是连锁错误。
 
-### 14.7 可复现性与安全注意事项
+### 14.8 可复现性与安全注意事项
 
 - 提交或发布前记录 PX4 commit、`git describe`、编译器版本、target 和固件校验和；
 - 固定主仓库和所有递归子模块的 commit，不要无记录地更新子模块；
