@@ -597,7 +597,7 @@ param show NN_AIRFRAME_ID
 `TAKEOFF`/`LAND`/`ABORT` 仍返回 `UNSUPPORTED`，执行器输出继续受
 `NN_LQI_OUTPUT_EN` 和 Commander 安全门控控制。
 
-双机 AIRLINK v1 由独立 `airlink` 模块实现，默认 `AIRLINK_ROLE=0`，在板级启动脚本中
+双机 AIRLINK v2 由独立 `airlink` 模块实现，默认 `AIRLINK_ROLE=0`，在板级启动脚本中
 使用 UART2/GPS2 `/dev/ttyS1`、6 Mbaud 8N1。协议 ABI、固件状态机、QGC/NSH 操作、
 控制权接口和验证边界见 [`../Docs/AIRLINK_PROTOCOL_V1_zh.md`](../Docs/AIRLINK_PROTOCOL_V1_zh.md)
 与 [`../Docs/AIRLINK_FIRMWARE_zh.md`](../Docs/AIRLINK_FIRMWARE_zh.md)。配对 arm 只能经
@@ -667,7 +667,7 @@ LQR 后端现在计算真实 LQI 输出，但执行器权威仍由 `NN_LQI_OUTPU
 故障注入、HIL 与执行器映射验证；QGC Actuators 页面负责底层输出方向、端点与中值
 标定，`PWM_MAIN_REV`、`PWM_MAIN_MINx/MAXx`、`NN_SV_TRIMx` 的语义不变。
 
-### 14.6 AIRLINK v1 PX4/NSH 调试指令
+### 14.6 AIRLINK v2 PX4/NSH 调试指令
 
 本节适用于带有 `MODULES_AIRLINK=y` 的 `micoair_h743-v2_nncontrol` 固件。AIRLINK
 启动时默认：
@@ -684,6 +684,9 @@ format=8N1
 执行器仍保持关闭。
 
 以下命令可直接在 QGC 的 **MAVLink Console** 或 USB/串口 NSH 中执行。
+
+v2 传感器预热、组合体姿态观测器和 `YAW_REFERENCE` 的完整台架命令见
+[`COMPOSITE_ATTITUDE_ESTIMATOR_CLI_zh.md`](COMPOSITE_ATTITUDE_ESTIMATOR_CLI_zh.md)。
 
 #### 14.6.1 启动前检查
 

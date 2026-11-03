@@ -274,6 +274,45 @@ class HilProtocolTest(unittest.TestCase):
         )
         self.assertEqual(disarm[1][5], 21196.0)
 
+    def test_missing_accelerometer_converts_truth_to_frd_specific_force(self):
+        half = math.sqrt(0.5)
+        cases = (
+            # Static level, free fall, and static nose down (pitch -90 deg).
+            ((1, 0, 0, 0), (0, 0, 0), (0, 0, -9.80665)),
+            ((1, 0, 0, 0), (0, 0, 9.80665), (0, 0, 0)),
+            ((half, 0, -half, 0), (0, 0, 0), (-9.80665, 0, 0)),
+        )
+        for quaternion, acceleration_n, expected in cases:
+            with self.subTest(quaternion=quaternion, acceleration=acceleration_n):
+                response = SimpleNamespace(
+                    controls=[0.0] * 16, mode=160,
+                    get_type=lambda: "HIL_ACTUATOR_CONTROLS",
+                )
+                connection = _FakeConnection([response])
+                controller = Px4HilController(
+                    HilOptions(connection="fake", pilot_source="rc"),
+                    torch_module=torch, device=torch.device("cpu"),
+                    dtype=torch.float64, control_dt=0.002,
+                    connection_factory=lambda *args, **kwargs: connection,
+                )
+                controller.set_sample(
+                    {
+                        "position_n": torch.zeros((1, 3)),
+                        "velocity_n": torch.zeros((1, 3)),
+                        "attitude_q_wb": torch.tensor([quaternion], dtype=torch.float64),
+                        "angular_velocity_b": torch.zeros((1, 3)),
+                        "linear_acceleration_n": torch.tensor([acceleration_n], dtype=torch.float64),
+                    },
+                    {}, torch.zeros((1, 4)),
+                )
+                controller.step(None, None)
+                sensor_call = next(call for call in connection.mav.calls if call[0] == "hil_sensor_send")
+                for actual, wanted in zip(sensor_call[1][1:4], expected):
+                    self.assertAlmostEqual(actual, wanted, places=6)
+                state_call = next(call for call in connection.mav.calls if call[0] == "hil_state_quaternion_send")
+                self.assertEqual(state_call[1][-3:], tuple(round(v / 9.80665 * 1000) for v in expected))
+                controller.close()
+
     def test_physical_rc_source_is_not_overwritten_by_webui(self):
         response = SimpleNamespace(
             controls=[0.0] * 16,
