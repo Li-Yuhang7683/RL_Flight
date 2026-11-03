@@ -7,6 +7,7 @@ Usage (from the repository root):
       .venv/bin/python Identification/scripts/build_real_log_dataset.py \
       --logs Identification/real_log/26.8.12 \
       --output Identification/datasets/real_logs_26_8_12_v1 \
+      --airframe-id airframe-1 \
       --mlp-checkpoint Identification/runs/repro_20260806/sim2real_offline_logs_step_response_mlp_v7/identifier.pt
 
 The output directory contains:
@@ -14,6 +15,7 @@ The output directory contains:
     windows.json        per-window selection report
     windows_summary.png one panel per accepted window (attitude/rate/command)
     build_report.json   per-log parse and selection summary
+    airframe.json       stable physical-airframe provenance
 """
 
 from __future__ import annotations
@@ -27,6 +29,13 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import torch
 
+from flight_identification.airframe import (
+    DEFAULT_REGISTRY,
+    airframe_provenance,
+    resolve_airframe,
+    validate_airframe_payload,
+    write_airframe_sidecar,
+)
 from flight_identification.real_log_adapter import (
     FEATURE_NAMES,
     ParsedFlight,
@@ -44,9 +53,11 @@ ACTIVE_FILL_S = 0.3
 RELEASE_RATE_RAD_S = 0.5
 RELEASE_TILT_CHANGE_DEG = 0.7
 RELEASE_SUSTAIN_SAMPLES = 25
+SCAN_STRIDE_SAMPLES = 25
 DISTURBANCE_LEVEL_DEG = 4.0
 DISTURBANCE_ONSET_DEG = 8.0
 DISTURBANCE_PEAK_DEG = 12.0
+MAX_SATURATION_FRACTION = 0.5
 
 TIER_A = "A"
 TIER_B = "B"
@@ -259,6 +270,8 @@ def _hard_accept(
         return "peak_tilt_out_of_range"
     if metrics["peak_rate_rad_s"] > 20.0:
         return "peak_rate_out_of_range"
+    if metrics["saturation_fraction"] > MAX_SATURATION_FRACTION:
+        return "saturation_fraction_out_of_range"
     return None
 
 
@@ -302,8 +315,23 @@ def _candidate_windows(
             (max(epoch_start, onset - PRE_RELEASE_SAMPLES), "disturbance")
             for onset in _disturbance_events(tilt, active_raw, epoch_start, epoch_stop)
         )
+        # Event-only sampling misses useful closed-loop disturbances in ordinary
+        # manual flights that never cross the conservative tilt thresholds.
+        # Scan every fully valid, continuously active run while retaining all
+        # existing window-level hard checks and the canonical length/rate.
+        for run_start, run_stop in _runs(active_raw):
+            last_start = run_stop - WINDOW_STEPS
+            if last_start < run_start:
+                continue
+            scan_starts = range(
+                run_start, last_start, SCAN_STRIDE_SAMPLES
+            )
+            starts.extend((start, "closed_loop_scan") for start in scan_starts)
+            if (last_start - run_start) % SCAN_STRIDE_SAMPLES:
+                starts.append((last_start, "closed_loop_scan"))
+        starts = sorted(set(starts))
         takeoff_remaining = True
-        for start, kind in sorted(starts):
+        for start, kind in starts:
             if kind.startswith("takeoff_offset") and not takeoff_remaining:
                 continue
             stop = start + WINDOW_STEPS
@@ -476,16 +504,41 @@ def build(
     output_directory: Path,
     mlp_checkpoint: Path | None,
     quality_calibration: Path | None,
+    airframe_id: str,
+    airframe_registry: Path | None = None,
+    recursive: bool = False,
+    motor_pole_count: int = 28,
 ) -> Mapping[str, Any]:
+    airframe_record = resolve_airframe(airframe_id, airframe_registry)
+    airframe = airframe_provenance(airframe_record)
+    raw_sidecar = logs_directory / "airframe.json"
+    if not raw_sidecar.exists():
+        raise ValueError(
+            f"{logs_directory} has no airframe.json; raw identification logs "
+            "must be explicitly bound to a registered airframe"
+        )
+    raw_payload = json.loads(raw_sidecar.read_text(encoding="utf-8"))
+    validate_airframe_payload(
+        raw_payload, airframe_id, artifact_name=str(raw_sidecar)
+    )
+    if raw_payload.get("bindings", {}).get("use_for_identification") is False:
+        raise ValueError(
+            f"{raw_sidecar} explicitly marks this log collection as "
+            "diagnostic-only and not usable for identification"
+        )
     output_directory.mkdir(parents=True, exist_ok=True)
-    files = sorted(logs_directory.glob("*.ulg"))
+    files = sorted(
+        logs_directory.rglob("*.ulg")
+        if recursive
+        else logs_directory.glob("*.ulg")
+    )
     seen: set[str] = set()
     sources: list[Path] = []
     duplicates: list[tuple[str, str]] = []
     for path in files:
         digest = md5(path)
         if digest in seen:
-            duplicates.append((path.name, digest))
+            duplicates.append((path.relative_to(logs_directory).as_posix(), digest))
             continue
         seen.add(digest)
         sources.append(path)
@@ -496,27 +549,30 @@ def build(
     all_rejects: list[dict[str, Any]] = []
     per_log: list[dict[str, Any]] = []
     for path in sources:
+        source_name = path.relative_to(logs_directory).as_posix()
         try:
-            flight = parse_ulog(path)
+            flight = parse_ulog(path, motor_pole_count=motor_pole_count)
         except Exception as error:  # pragma: no cover - defensive
-            parse_errors[path.name] = str(error)
+            parse_errors[source_name] = str(error)
             continue
-        flights[path.name] = flight
-        print(f"parsed {path.name}: {len(flight.timestamp_us)} samples", flush=True)
+        flights[source_name] = flight
+        print(f"parsed {source_name}: {len(flight.timestamp_us)} samples", flush=True)
         candidates, rejects = _candidate_windows(flight)
         for entry in candidates:
-            entry["source"] = path.name
+            entry["source"] = source_name
         for entry in rejects:
-            entry["source"] = path.name
+            entry["source"] = source_name
         all_candidates.extend(candidates)
         all_rejects.extend(rejects)
         per_log.append(
             {
-                "source": path.name,
+                "source": source_name,
                 "md5": md5(path),
+                "logged_motor_pole_count": flight.logged_motor_pole_count,
+                "physical_motor_pole_count": flight.physical_motor_pole_count,
                 "duration_s": round((flight.timestamp_us[-1] - flight.timestamp_us[0]) / 1e6, 3),
-        "valid_fraction": float(flight.valid.mean()),
-        "max_contiguous_valid_run_s": _max_contiguous_valid_run_s(flight.valid),
+                "valid_fraction": float(flight.valid.mean()),
+                "max_contiguous_valid_run_s": _max_contiguous_valid_run_s(flight.valid),
                 "candidate_windows": len(candidates),
                 "rejected_windows": len(rejects),
                 "active_fraction": float(
@@ -525,7 +581,7 @@ def build(
             }
         )
         print(
-            f"  {path.name}: {len(candidates)} candidates, {len(rejects)} rejects",
+            f"  {source_name}: {len(candidates)} candidates, {len(rejects)} rejects",
             flush=True,
         )
 
@@ -585,6 +641,10 @@ def build(
             feature_names=np.asarray(FEATURE_NAMES, dtype="<U64"),
             sample_hz=np.float64(SAMPLE_HZ),
             valid_mask=bundle_valid,
+            airframe_id=np.asarray(airframe["airframe_id"]),
+            airframe_json=np.asarray(
+                json.dumps(airframe, ensure_ascii=False), dtype="<U512"
+            ),
             source_log=np.asarray(meta["source_log"], dtype="<U64"),
             window_start_us=np.asarray(meta["window_start_us"], dtype=np.int64),
             window_stop_us=np.asarray(meta["window_stop_us"], dtype=np.int64),
@@ -614,10 +674,13 @@ def build(
             )
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "airframe": airframe,
         "input_directory": str(logs_directory),
         "total_ulg_files": len(files),
         "unique_ulg_files": len(sources),
+        "recursive": recursive,
+        "physical_motor_pole_count": motor_pole_count,
         "duplicates": duplicates,
         "parse_errors": parse_errors,
         "sample_hz": SAMPLE_HZ,
@@ -638,9 +701,20 @@ def build(
         json.dumps(report, indent=2, ensure_ascii=False, default=_json_default),
         encoding="utf-8",
     )
+    write_airframe_sidecar(
+        output_directory,
+        airframe_record,
+        artifact_type="real_log_identification_dataset",
+        bindings={
+            "input_directory": str(logs_directory),
+            "bundle": str(output_directory / "bundle.npz"),
+            "recursive": recursive,
+            "physical_motor_pole_count": motor_pole_count,
+        },
+    )
     (output_directory / "windows.json").write_text(
         json.dumps(
-            {"schema_version": 1, "windows": selected},
+            {"schema_version": 2, "airframe": airframe, "windows": selected},
             indent=2,
             ensure_ascii=False,
             default=_json_default,
@@ -665,8 +739,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--logs", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--airframe-id", required=True)
+    parser.add_argument("--airframe-registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--mlp-checkpoint", type=Path)
     parser.add_argument("--quality-calibration", type=Path)
+    parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--motor-pole-count", type=int, default=28)
     return parser
 
 
@@ -677,6 +755,10 @@ def main() -> None:
         args.output,
         args.mlp_checkpoint,
         args.quality_calibration,
+        args.airframe_id,
+        args.airframe_registry,
+        args.recursive,
+        args.motor_pole_count,
     )
 
 

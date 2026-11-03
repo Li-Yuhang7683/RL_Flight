@@ -5,8 +5,15 @@
 
 ## 执行器所有权
 
-- 飞手的 `manual_control_setpoint.throttle` 从 `[-1,1]` 映射到 `[0,1]`，作为
-  `motors[0]` 上桨命令原样输出，LQI 不修改上桨。
+- 实机四轴手动量只接受物理 RC；地面站指令（GS-Link v1）只能经
+  `GroundStationGate` 在 RC 解锁、通道 8 模式槽 6、External Mode 激活和指令新鲜度同时满足时替换
+  四轴指令。详见 `GROUND_STATION_POSITION_LINK_zh.md`；目标串口协议见
+  `GS_LINK_PROTOCOL_V1_zh.md`。
+- 飞手的 `manual_control_setpoint.throttle` 从 `[-1,1]` 映射到 `[0,1]`，在控制器
+  指令域内作为 `motors[0]` 上桨命令由 LQI 原样传递。
+- 所有控制器后端与输入来源完成计算后，上桨和下桨的最终归一化输出统一乘以
+  `0.5`，即控制器域满油门对应最终 `50%`；三路舵机不缩放。该映射不进入 LQI
+  内部状态，因此权重、观察器和上下桨差限幅仍使用原标定尺度。
 - 下桨的基准开度跟随同一个飞手开度，LQI 的第 0 路增量叠加到该基准后限幅到
   `[0,1]`。
 - 油门空闲门控：映射后的飞手开度为 `0` 时，LQI 不计算控制输出、不更新持久
@@ -66,17 +73,43 @@ bash px4_trans/tests/run_lqi_core_check.sh
 生成器会同时更新 checksum、权重字节数以及 Python/C++ 黄金向量。模型描述中的
 schema、NED/FRD、四元数约定、执行器所有权或观察器模式不匹配时，核心会拒绝运行。
 
+### v2 标称权重（2026-08-28）
+
+`px4_trans/configs/lqi_nominal_deployment_v2.yaml` 对应
+`Controller/configs/lqi_sim2real_micro_coaxial_4out_v2.yaml`：
+
+- roll/pitch 积分权重从 `0.04/0.04` 提升到 `0.025/0.025`（约 2.6 倍），积分限幅从
+  `0.30/0.30` 提升到 `0.45/0.45`，用于补偿机械零点引起的 roll/pitch 持续稳态误差；
+- 最大 roll/pitch 指令从 `12 deg` 提升到 `20 deg`（`0.3490659 rad`），yaw 速率指令不变；
+- 其余 LQI 权重与 v1 4 输出配置一致。
+
+重新生成并写入固件默认 nominal 载荷：
+
+```bash
+PYTHONPATH=Identification/src:Controller/src:SimEnv/src \
+  python px4_trans/tools/generate_lqi_backend.py \
+  --deployment-config px4_trans/configs/lqi_nominal_deployment_v2.yaml
+bash px4_trans/tests/run_lqi_core_check.sh
+```
+
+机械零点的底层输出补偿仍由 `NN_SV_TRIM1/2/3` 参数在 PX4 输出层完成；v2 矩阵的
+积分增强处理的是残余偏置与收敛速度。辨识版 19 状态的复合响应系数不随本配置
+改变，但重新生成载荷时会从所选部署配置刷新电机标定表、配平点、积分限幅和
+手动参考尺度。
+
 ## 辨识模型版本（lqi_identified，19 状态复合 LQI）
 
 2026-08-12 起，固件支持第二版 LQI 权重：由真机日志离线辨识得到的 19 状态复合
 LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）保持不动，
 通过参数 `NN_LQI_MODEL` 选择：
 
-- `NN_LQI_MODEL=0`：标称 13 状态 LQI（默认，行为与之前完全一致）；
+- `NN_LQI_MODEL=0`：标称 13 状态 LQI（可运行选择）；
 - `NN_LQI_MODEL=1`：真机辨识 19 状态复合 LQI（`lqi_identified`）。
 
-该参数在 `ln` 模块启动时读取，修改后需要重启 `ln` 模块。执行器输出仍由
-`NN_LQI_OUTPUT_EN` 统一门控，辨识版本默认也不放行飞行。
+历史标定固件曾在 `nn_control start` 前设置 `NN_LQI_MODEL=1`。2026-10-29 起
+当前固件默认设置 `NN_LQI_MODEL=2`，运行后文“双电机总距/差模模型”；参数仍可
+选择 `0/1`，但修改后需要重启 `nn_control`。执行器输出仍由
+`NN_LQI_OUTPUT_EN` 统一门控。
 
 19 状态顺序：
 
@@ -94,13 +127,25 @@ LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）�
 - 参考系、四元数、摇杆适配、上下桨差动限幅、饱和冻结积分等约定与标称版一致。
 - 新 ABI 位于 `LqiCompositeControllerModel.hpp`，算法位于
   `LqiCompositeCore.hpp`，数值载荷由
-  `Identification/datasets/real_logs_26_8_12_v1/offline_identification_v7_hybrid.json`
+  `Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json`
   经生成器写入 `LqiIdentifiedModel.hpp`（禁止手改）。
+- 当前载荷显式绑定 `airframe-1`。生成、部署和运行时检查契约见
+  `Identification/AIRFRAME_PROVENANCE_zh.md`；`NN_AIRFRAME_ID` 与模型内嵌机架
+  编号不一致时执行器输出被禁止。
+- 2026-10-26 初版基本可用标定载荷的 model checksum 为 `0x653927a7`，权重字节数为
+  580；10 点电机表在控制器命令域中已经吸收最终 `0.5` 输出映射。日志特征质量门控
+  已通过。初版 `p/q=0.2` 在实机上仍出现约 5–7 Hz 极限环，因此降振版把 p/q
+  状态尺度放宽到 `0.3`，当前 model checksum 为 `0x1716d847`。
+- 日志采集时 `MOT_POLE_COUNT=14`，但当前 28 磁极电机应使用 28；启动脚本因此
+  强制设置 `MOT_POLE_COUNT=28`。必须核对实体电机磁极数，不能在不重新标定电机表
+  的情况下单独修改磁极数或最终输出比例。
+- 该载荷通过了黄金向量、4/8 s 四方向极性和反对称检查，可作为低空受控基本悬停
+  候选；仍需台架、HIL 和实机 shadow 验证，不能把编译通过解释为飞行授权。
 
 生成器现在同时输出标称和辨识两套 golden 向量；主机检查
 `px4_trans/tests/run_lqi_core_check.sh` 会依次验证两个核心。SimEnv 闭环极性
 检查脚本为 `Identification/scripts/polarity_check_identified_lqi.py`，结果为
-`Identification/datasets/real_logs_26_8_12_v1/polarity_check_identified_lqi.json`
+`Identification/datasets/real_logs_26_10_26_v4/polarity_check_basic_use_8s.json`
 （四个方向初始角加速度方向正确、4 s 内回正，舵机指令对 ±roll 反对称，输出有界）。
 
 ## 2026-08-28 调参：增大积分项与打杆指令比例
@@ -125,3 +170,21 @@ LQI。原有 13 状态标称权重（`LqiNominalModel.hpp`、`lqi_golden.*`）�
 roll 残差 0.16°→0.13°、pitch 残差 0.08°→0.003°；打杆阶跃 t90 由约 0.44 s
 缩短到约 0.39 s，四个方向极性检查全部正确、输出有界。辨识模型极点半径由
 0.9956 改善到 0.9912。
+
+## 双电机总距/差模模型（`NN_LQI_MODEL=2`）
+
+2026-10-29 新增第三套载荷 `lqi_coaxial_collective`，旧模型 0/1 保持不变：
+
+- 飞手总距映射目标竖直加速度；
+- z 加速度 PI 控制双电机共模；
+- 双电机共模/差模分配总推力与 yaw；
+- 8 状态姿态 LQI 输出三轴力矩；
+- 三舵机只用于滚转/俯仰。
+
+上下桨 PWM–转速表统一来自
+`log/电机标定/3100kv上桨_空中.csv`，按固件最终 `0.5` 输出映射转换到控制器命令域。
+载荷、黄金向量和配置由
+`px4_trans/tools/generate_coaxial_collective_backend.py` 生成，部署配置为
+`px4_trans/configs/lqi_coaxial_collective_airframe1.yaml`。当前启动脚本和参数默认
+选择模型 2；完整结果和限制见
+`Identification/LQI_COAXIAL_COLLECTIVE_SERVO_3100KV_FIRMWARE_zh.md`。

@@ -41,6 +41,8 @@ controller.reset(reset_mask)
 - `pid`：高度 PID、四元数姿态 PID/PD、偏航角速度控制和加权控制分配；
 - `lqr`：高度 PID 加 10 状态离散姿态/执行器 LQR；
 - `hybrid_pid_lqr`：电机启动和大误差阶段使用 PID，进入配平邻域后平滑切到 LQR；
+- `lqi_coaxial_collective_servo`：飞手总距 + z 加速度 PI，双电机只做总距
+  共模/yaw 差模，三舵机只做滚转/俯仰；
 - `neural`：兼容当前 Train `forward_step` MLP/GRU，也兼容普通可调用前馈网络；
 - `module:factory`：配置可以引用自定义工厂，不必修改 SimEnv 或 WebUI。
 
@@ -63,6 +65,24 @@ controller.reset(reset_mask)
 
 `collective_mode: hover` 使用高度 PID 保持 reset 时的位置；`manual` 则把外部
 collective command 解释为上桨 PWM，并自动计算反扭矩平衡的下桨基准。
+
+## 双电机总距/差模 + 三舵机姿态
+
+`lqi_coaxial_collective_servo`
+（[机架 1 配置](configs/lqi_coaxial_collective_servo_airframe1.yaml)）是独立的
+控制结构和控制类型，不改变上述 `lqr`、`hybrid_pid_lqr` 或已实飞配置。其杆量
+不是上桨 PWM：中间杆量对应零竖直加速度，满行程对应 ±5 m/s²。控制器对低通后的
+z 加速度做 PI 修正，再以双电机共模实现总推力、以差模实现 yaw。姿态 LQI 只产生
+滚转/俯仰/yaw 力矩；局部 MIMO 混合器把三舵机限定为滚转/俯仰输出，并抵消其共模
+推力和 yaw 寄生分量。
+
+机架 1 的动力学、电机标定和辨识来源固定在配置的 `airframe` 段。运行
+`Identification/src/flight_identification/coaxial_collective_evaluation.py`
+可复现配对非线性验证；结果只属于仿真，不代表飞行授权。
+
+2026-10-29 版把上下两桨 PWM–转速表统一为
+`log/电机标定/3100kv上桨_空中.csv`，CSV 物理命令按最终 `0.5` 输出映射乘 2
+进入控制器命令域。PX4 对应载荷为 `NN_LQI_MODEL=2`，旧模型 0/1 保留。
 
 ## 测试
 

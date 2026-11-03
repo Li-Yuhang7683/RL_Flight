@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "artifact_type": "raw_ulog_collection",
+  "airframe": {
+    "schema_version": 1,
+    "airframe_id": "airframe-2",
+    "airframe_number": 2,
+    "display_name": "机架2",
+    "platform_family": "micoair_h743-v2_micro_coaxial_3servo",
+    "controller_contract": "external_upper_4_output",
+    "status": "data_collection"
+  },
+  "bindings": {
+    "use_for_identification": false,
+    "role": "preliminary_diagnostics",
+    "note": "Do not mix these logs into airframe-1 identification; collect a new closed-loop dataset after actuator checks."
+  }
+}

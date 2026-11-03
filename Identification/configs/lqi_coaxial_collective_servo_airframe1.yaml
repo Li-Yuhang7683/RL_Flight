@@ -1,0 +1,21 @@
+schema_version: 1
+
+# Paired nonlinear validation for the independently allocated airframe-1
+# controller. Every variant receives the same vehicle parameters, initial
+# conditions and sensor stream.
+simulator_config: SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1.yaml
+controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe1.yaml
+baseline_controller_config: Controller/configs/lqi_sim2real_micro_coaxial.yaml
+
+seed: 20261029
+control_hz: 500
+dtype: float32
+duration_s: 2.0
+settle_s: 0.8
+command_change_s: 0.2
+measurement_mode: simulated_sensors
+
+# The old controller interprets collective as an upper-motor PWM command.
+# For a fair closed-loop comparison, the evaluator inversely maps the same
+# desired thrust into that PWM domain. It has no z-acceleration feedback.
+baseline_collective_mode: manual

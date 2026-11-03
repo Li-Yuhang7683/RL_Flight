@@ -42,6 +42,7 @@ except ImportError:  # pragma: no cover - only used by the real-log CLI
 SAMPLE_HZ = 500
 SAMPLE_PERIOD_US = int(round(1e6 / SAMPLE_HZ))
 MOTOR_RPM_TO_RAD_S = 2.0 * math.pi / 60.0
+DEFAULT_PHYSICAL_MOTOR_POLE_COUNT = 28
 ACTUATOR_FUNCTION_MOTOR1 = 101
 ACTUATOR_FUNCTION_MOTOR2 = 102
 
@@ -73,6 +74,8 @@ class ParsedFlight:
     command: np.ndarray
     valid: np.ndarray
     sample_hz: int = SAMPLE_HZ
+    logged_motor_pole_count: int | None = None
+    physical_motor_pole_count: int = DEFAULT_PHYSICAL_MOTOR_POLE_COUNT
 
     @property
     def attitude_q_tilt(self) -> np.ndarray:
@@ -247,11 +250,17 @@ def yaw_free_tilt_quaternion(attitude_q_wb: np.ndarray) -> np.ndarray:
     )
 
 
-def parse_ulog(path: str | Path, sample_hz: int = SAMPLE_HZ) -> ParsedFlight:
+def parse_ulog(
+    path: str | Path,
+    sample_hz: int = SAMPLE_HZ,
+    motor_pole_count: int = DEFAULT_PHYSICAL_MOTOR_POLE_COUNT,
+) -> ParsedFlight:
     """Parse one ULog and resample it onto a fixed ``sample_hz`` grid."""
     _require_pyulog()
     if sample_hz != SAMPLE_HZ:
         raise ValueError("the canonical offline bundle is fixed at 500 Hz")
+    if motor_pole_count <= 0 or motor_pole_count % 2:
+        raise ValueError("physical motor pole count must be a positive even integer")
     source = Path(path).expanduser().resolve()
     log = pyulog.ULog(str(source))
     topics = _topic_map(log)
@@ -294,6 +303,17 @@ def parse_ulog(path: str | Path, sample_hz: int = SAMPLE_HZ) -> ParsedFlight:
     )
 
     motor_speed = _esc_motor_speed(topics["esc_status"], grid, max_gap_us)
+    logged_pole_count = getattr(log, "initial_parameters", {}).get(
+        "MOT_POLE_COUNT"
+    )
+    if logged_pole_count is not None:
+        logged_pole_count = int(round(float(logged_pole_count)))
+        if logged_pole_count <= 0:
+            raise ValueError(f"{source.name} has invalid MOT_POLE_COUNT")
+        # PX4 converts bidirectional-DShot eRPM to mechanical RPM using the
+        # configured MOT_POLE_COUNT.  Normalize older logs whose configured
+        # value differs from the physical magnet count used for calibration.
+        motor_speed *= logged_pole_count / motor_pole_count
 
     motor_ts, motor_values = _field_arrays(
         topics["actuator_motors"], [f"control[{index}]" for index in range(2)]
@@ -336,4 +356,6 @@ def parse_ulog(path: str | Path, sample_hz: int = SAMPLE_HZ) -> ParsedFlight:
         command=command,
         valid=valid,
         sample_hz=SAMPLE_HZ,
+        logged_motor_pole_count=logged_pole_count,
+        physical_motor_pole_count=motor_pole_count,
     )

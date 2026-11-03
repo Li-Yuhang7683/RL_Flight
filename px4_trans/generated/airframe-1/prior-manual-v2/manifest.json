@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "artifact_type": "px4_coaxial_collective_lqi_model",
+  "airframe_id": "airframe-1",
+  "airframe_number": 1,
+  "controller_contract": "pilot_acceleration_dual_motor_common_differential_servo_roll_pitch",
+  "model_checksum": "0xd5681c3f",
+  "source": {
+    "deployment_config": "px4_trans/configs/lqi_coaxial_collective_airframe1.yaml",
+    "deployment_sha256": "2cba4ced671e4f3df867baffa7a3ea2a97f58330430d7b566f9d27f412dccb48",
+    "simulator_config": "SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1.yaml",
+    "simulator_sha256": "3032bb75a0d4223a49a8383fafc5253298ac0f08cdc25a0f2e4a5cd19f4954b7",
+    "controller_config": "Controller/configs/lqi_coaxial_collective_servo_airframe1.yaml",
+    "controller_sha256": "840581c6043755dde008575e74f1c9430ec1eb1aae3a6989698c38f6b386900b",
+    "calibration_path": "log/电机标定/3100kv上桨_空中.csv",
+    "calibration_sha256": "616a9a625f92593929f275180b1b43e6529fa0986b35fb8fbcf616a06f8f5d5d",
+    "calibration_rows": [
+      {
+        "physical_command": 0.05,
+        "rpm": 4268.45,
+        "rad_s": 446.9910387405117,
+        "samples": 40
+      },
+      {
+        "physical_command": 0.1,
+        "rpm": 5522.4,
+        "rad_s": 578.3043756728091,
+        "samples": 40
+      },
+      {
+        "physical_command": 0.15,
+        "rpm": 6850.775,
+        "rad_s": 717.411480379887,
+        "samples": 40
+      },
+      {
+        "physical_command": 0.2,
+        "rpm": 7944.975,
+        "rad_s": 831.9958364318189,
+        "samples": 40
+      },
+      {
+        "physical_command": 0.25,
+        "rpm": 8940.025,
+        "rad_s": 936.1972287636363,
+        "samples": 40
+      }
+    ],
+    "identification_report": "Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json",
+    "identification_report_sha256": "344be729a1cfad46231b639d470b62ee0bb60c1216c130ae27042b34e0272571",
+    "identified_model_checksum": "0x1716d847",
+    "trim_upper_command": 0.4393326835601375,
+    "trim_lower_command": 0.4393326835601375,
+    "trim_motor_speed_rad_s": [
+      872.98104034295,
+      872.98104034295
+    ],
+    "lqi_pole_radius": 0.995991002921085
+  },
+  "generated": {
+    "active_header": "px4_trans/px4/src/modules/nn_control/LqiCoaxialCollectivePayload.hpp",
+    "active_header_sha256": "d1438e8aa7cc4228e6ba3099170857bdf0d2a17f9dad9dc6996e2b23dfff97b3",
+    "archived_header": "px4_trans/generated/airframe-1/LqiCoaxialCollectivePayload.hpp",
+    "archived_header_sha256": "d1438e8aa7cc4228e6ba3099170857bdf0d2a17f9dad9dc6996e2b23dfff97b3",
+    "golden_header": "px4_trans/tests/lqi_coaxial_collective_golden.hpp",
+    "golden_header_sha256": "bb2e73255734c4a1be43356c91e33789692702de3b410f4efb3f41f64caa089e",
+    "golden_json": "px4_trans/tests/lqi_coaxial_collective_golden.json",
+    "golden_json_sha256": "ab27fd50b57b0f5843fbb0c852cf174edd2e262419eb957145b5fdf1cea772f7"
+  },
+  "firmware_artifact": {
+    "path": "px4_trans/generated/airframe-1/micoair_h743-v2_nncontrol_coaxial_3100kv_airframe1.px4",
+    "sha256": "4e63c79d8d3d61820f4b2655995f8faf8af73ea98b16946e1278e2937f53ee1f",
+    "size_bytes": 1062058
+  }
+}

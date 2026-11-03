@@ -1,0 +1,30 @@
+schema_version: 2
+
+# Canonical airframe-1 deployment description. Keep every airframe-specific
+# path in this file so generating another airframe cannot silently reuse these
+# identification inputs.
+airframe_id: airframe-1
+airframe_registry: Identification/configs/airframes.yaml
+
+simulator_config: SimEnv/configs/sim2real_micro_coaxial_20261026.yaml
+controller_config: Controller/configs/lqi_sim2real_micro_coaxial_4out_20261026.yaml
+
+identified_model:
+  report: Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json
+  binding_checkpoint: Identification/runs/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt
+  expected_checksum: "0x1716d847"
+
+# Must match nn_control/FinalMotorOutputMap.hpp.
+final_motor_output_scale: 0.5
+physical_motor_pole_count: 28
+
+manual_reference:
+  roll:
+    limit_rad: 0.3490659
+    time_constant_s: 0.18
+  pitch:
+    limit_rad: 0.3490659
+    time_constant_s: 0.18
+  yaw:
+    limit_rad_s: 1.2
+    time_constant_s: 0.25

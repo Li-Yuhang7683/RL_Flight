@@ -1,0 +1,74 @@
+schema_version: 1
+
+# airframe_id is the stable key used by datasets, identification reports,
+# generated LQI headers, and runtime checks. display_name is for humans and
+# may be changed without changing the binding.
+#
+# A flight-controller UUID is not an airframe identity: the same controller may
+# be moved between vehicles, and multiple hardware revisions can share one
+# controller configuration.
+airframes:
+  airframe-1:
+    airframe_number: 1
+    display_name: 机架1
+    platform_family: micoair_h743-v2_micro_coaxial_3servo
+    controller_contract: external_upper_4_output
+    status: identified
+    log_sources:
+      - path: log/26.10.26
+        role: closed_loop_identification
+        use_for_identification: true
+    identification:
+      dataset: Identification/datasets/real_logs_26_10_26_v4
+      bundle: Identification/datasets/real_logs_26_10_26_v4/bundle.npz
+      result: Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json
+      axis_checkpoint: Identification/runs/sim2real_offline_logs_step_response_tcn_500hz_v7/identifier.pt
+      lqi_deployment: px4_trans/configs/lqi_airframe_1.yaml
+      coaxial_collective:
+        simulator_config: SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1.yaml
+        controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe1.yaml
+        firmware_config: px4_trans/configs/lqi_coaxial_collective_airframe1.yaml
+        firmware_manifest: px4_trans/generated/airframe-1/lqi_coaxial_collective_manifest.json
+        upper_motor_speed_calibration: log/电机标定/3100kv上桨_空中.csv
+        model_checksum: "0xd5681c3f"
+      coaxial_collective_manual_v2:
+        controller_contract: pilot_acceleration_dual_motor_common_differential_servo_roll_pitch
+        simulator_config: SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1_manual_v2.yaml
+        controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe1_manual_v2.yaml
+        firmware_config: px4_trans/configs/lqi_coaxial_collective_airframe1_manual_v2.yaml
+        firmware_manifest: px4_trans/generated/airframe-1/manual-v2/lqi_coaxial_collective_manifest.json
+        firmware: px4_trans/generated/airframe-1/manual-v2/micoair_h743-v2_nncontrol_manual_v2.px4
+        upper_motor_speed_calibration: log/电机标定/3100kv上桨_空中.csv
+        model_checksum: "0x5c2d17af"
+        status: simulation_validated_candidate
+        flight_authorized: false
+      coaxial_collective_manual_v3:
+        controller_contract: pilot_acceleration_dual_motor_common_differential_servo_roll_pitch
+        simulator_config: SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1_manual_v2.yaml
+        controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe1_manual_v3.yaml
+        firmware_config: px4_trans/configs/lqi_coaxial_collective_airframe1_manual_v3.yaml
+        firmware_manifest: px4_trans/generated/airframe-1/manual-v3/lqi_coaxial_collective_manifest.json
+        firmware: px4_trans/generated/airframe-1/manual-v3/micoair_h743-v2_nncontrol_manual_v3.px4
+        upper_motor_speed_calibration: log/电机标定/3100kv上桨_空中.csv
+        model_checksum: "0x78ae1111"
+        manual_reference_filter: 0
+        status: simulation_validated_candidate
+        flight_authorized: false
+      model_checksum: "0x1716d847"
+    notes:
+      - 2026-10-26 closed-loop dataset and pq03 damping model are assigned to airframe-1.
+      - 2026-10-29 upper-rotor 3100 kV in-air speed calibration generated the independent NN_LQI_MODEL=2 firmware payload.
+  airframe-2:
+    airframe_number: 2
+    display_name: 机架2
+    platform_family: micoair_h743-v2_micro_coaxial_3servo
+    controller_contract: external_upper_4_output
+    status: data_collection
+    log_sources:
+      - path: log/flight2
+        role: preliminary_diagnostics
+        use_for_identification: false
+    identification: {}
+    notes:
+      - Fresh airframe-2 closed-loop data must be collected after mechanical and actuator checks.
+      - Preliminary flight2 logs are diagnostics only and must not be mixed into airframe-1 identification.

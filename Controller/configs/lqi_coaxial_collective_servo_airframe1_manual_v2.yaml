@@ -1,0 +1,49 @@
+type: lqi_coaxial_collective_servo
+
+# Airframe-1 manual-v2 candidate. The runtime parameter source contains the
+# measured 3100 kV upper-rotor in-air speed table (2026-10-29), the previous
+# lower-rotor/aero/servo identification, and the 2026-10-30 flight-derived
+# mass/inertia manual estimates.
+airframe:
+  id: airframe-1
+  simulator_config: SimEnv/configs/sim2real_micro_coaxial_3100kv_airframe1_manual_v2.yaml
+  identification_report: Identification/datasets/real_logs_26_10_26_v4/offline_identification_v7_hybrid_pq03.json
+  identified_lqi_config: px4_trans/configs/lqi_airframe_1.yaml
+  identified_lqi_checksum: "0x1716d847"
+  upper_motor_speed_calibration: log/电机标定/3100kv上桨_空中.csv
+  upper_motor_calibration_domain: physical_command_times_two
+
+params:
+  collective:
+    # This is the centered controller-domain throttle. PX4 rc_throttle -1/0/+1
+    # maps to 0.0/0.5/1.0. Center asks for zero vertical acceleration; full
+    # deflection asks for +/-5 m/s^2 and the lowest stick is true idle.
+    pilot_minimum: 0.0
+    pilot_maximum: 1.0
+    maximum_acceleration_m_s2: 5.0
+    acceleration_kp: 1.0
+    acceleration_ki: 4.0
+    acceleration_integral_limit_m_s2: 2.0
+    acceleration_filter_time_constant_s: 0.010
+    minimum_thrust_fraction: 0.02
+    maximum_thrust_fraction: 0.98
+    zero_throttle_threshold: 0.02
+
+  lqi:
+    # Manual-v2 conservative scales. The 2x scaling reduces attitude loop gain
+    # to leave phase margin for the measured 55-65 ms servo response and to
+    # stop the 3.4-4.7 Hz saturated limit cycle seen in flight2/6.
+    state_scales: [0.3490658, 0.3490658, 1.4, 1.4, 3.0, 0.20, 0.20, 0.80]
+    input_scales: [0.008, 0.008, 0.020]
+    input_weight_scale: 0.15
+
+  allocation:
+    maximum_moment_n_m: [0.009, 0.009, 0.025]
+    motor_effectiveness_grid: [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+    # Accounts for the conservative hover Jacobian underestimating the
+    # nonlinear grid moment generated after servo/translational lag. The
+    # flight logs show stronger-than-model angular response, so manual-v2
+    # commands the conservative unit scale rather than increasing authority.
+    servo_effectiveness_scale: 1.0
+    motor_regularization: 1.0e-10
+    servo_regularization: 1.0e-10

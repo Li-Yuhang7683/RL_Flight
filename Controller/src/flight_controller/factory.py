@@ -5,6 +5,7 @@ from typing import Any, Callable, Mapping
 
 from .base import FlightController
 from .classical import HybridPIDLQRController, LQRController, PIDController
+from .coaxial_collective import CoaxialCollectiveServoController
 from .neural import NeuralNetworkController
 from .types import ControllerContext
 
@@ -14,6 +15,7 @@ _REGISTRY: dict[str, ControllerFactory] = {
     "pid": PIDController,
     "lqr": LQRController,
     "hybrid_pid_lqr": HybridPIDLQRController,
+    "lqi_coaxial_collective_servo": CoaxialCollectiveServoController,
     "neural": NeuralNetworkController,
 }
 

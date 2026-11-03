@@ -9,6 +9,13 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import torch
 
+from .airframe import (
+    DEFAULT_REGISTRY,
+    airframe_provenance,
+    file_sha256,
+    read_bundle_airframe,
+    resolve_airframe,
+)
 from .config import load_experiment_config
 from .control_evaluation import _lqr_gain, _nominal_actuator_model
 from .offline_models import build_offline_identifier
@@ -266,6 +273,21 @@ def _predict_logs(
 @torch.no_grad()
 def infer(args: argparse.Namespace) -> Mapping[str, Any]:
     checkpoint_path = Path(args.checkpoint).expanduser().resolve()
+    log_bundle_path = Path(args.logs).expanduser().resolve()
+    bundle_airframe = read_bundle_airframe(log_bundle_path)
+    if bundle_airframe is None:
+        raise ValueError(
+            f"log bundle {log_bundle_path} has no airframe provenance; rebuild it "
+            "with build_real_log_dataset.py --airframe-id"
+        )
+    bundle_airframe_id = str(bundle_airframe["airframe_id"])
+    if args.airframe_id is not None and args.airframe_id != bundle_airframe_id:
+        raise ValueError(
+            f"requested airframe {args.airframe_id!r}, but log bundle belongs "
+            f"to {bundle_airframe_id!r}"
+        )
+    airframe_record = resolve_airframe(bundle_airframe_id, args.airframe_registry)
+    airframe = airframe_provenance(airframe_record)
     if not 0.0 < args.minimum_valid_fraction <= 1.0:
         raise ValueError("minimum-valid-fraction must be in (0, 1]")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -274,7 +296,7 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
     feature_names = tuple(checkpoint["feature_names"])
     expected_sample_hz = 500.0 / int(checkpoint["downsample"])
     features, valid, sample_hz = load_canonical_log_bundle(
-        args.logs,
+        log_bundle_path,
         feature_names,
         expected_sample_hz,
         int(checkpoint["history_steps"]),
@@ -427,13 +449,28 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
         raise ValueError("analysis-gain-blend must be between zero and one")
     analysis_gain = nominal_gain + blend_fraction * (predicted_gain - nominal_gain)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "airframe": airframe,
         "checkpoint": str(checkpoint_path),
         "secondary_checkpoint": (
             None if secondary_checkpoint_path is None else str(secondary_checkpoint_path)
         ),
         "secondary_output_axes": secondary_output_axes,
-        "log_bundle": str(Path(args.logs).expanduser().resolve()),
+        "log_bundle": str(log_bundle_path),
+        "source_sha256": {
+            "log_bundle": file_sha256(log_bundle_path),
+            "primary_checkpoint": checkpoint_sha256(checkpoint_path),
+            "secondary_checkpoint": (
+                None
+                if secondary_checkpoint_path is None
+                else checkpoint_sha256(secondary_checkpoint_path)
+            ),
+            "quality_calibration": (
+                None
+                if quality_calibration_path is None
+                else file_sha256(quality_calibration_path)
+            ),
+        },
         "architecture": str(checkpoint.get("architecture", "mlp")),
         "sample_hz": sample_hz,
         "effective_sample_hz_by_checkpoint": {
@@ -474,6 +511,7 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
         json.dumps(
             {
                 "output": str(output),
+                "airframe_id": airframe["airframe_id"],
                 "selected_flights": len(selected),
                 "feature_z_score_abs_p95": report["feature_z_score_abs_p95"],
                 "quality_gate_passed_for_independent_validation": quality_gate[
@@ -501,6 +539,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--secondary-checkpoint")
     parser.add_argument("--secondary-output-axes", default="roll,pitch")
     parser.add_argument("--logs", required=True)
+    parser.add_argument(
+        "--airframe-id",
+        help="expected airframe ID; must match the log bundle provenance if supplied",
+    )
+    parser.add_argument("--airframe-registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--experiment-config", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--device", default="cuda:0")
