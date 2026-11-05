@@ -35,6 +35,7 @@ def main() -> None:
         entrypoint = ComponentRegistry().build_entrypoint(
             {"type": config.entrypoint.type, "version": config.entrypoint.version}
         )
+        #训练入口
         result = entrypoint(config)
         print(result["run_directory"])
     elif args.command == "evaluate":
