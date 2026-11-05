@@ -1338,9 +1338,16 @@ class Px4HilController:
             sensor.get("gyro", truth["angular_velocity_b"])
         )
         velocity = self._row(truth["velocity_n"])
-        specific_force = self._row(
-            sensor.get("accelerometer", truth["linear_acceleration_n"])
-        )
+        if "accelerometer" in sensor:
+            specific_force = self._row(sensor["accelerometer"])
+        else:
+            # Truth is kinematic acceleration in NED; HIL expects FRD specific
+            # force. Subtract NED gravity before rotating world -> body.
+            acceleration_n = self._row(truth["linear_acceleration_n"])
+            specific_force = rotate_world_to_body(
+                quaternion,
+                (acceleration_n[0], acceleration_n[1], acceleration_n[2] - 9.80665),
+            )
         acceleration_mg = [
             round(min(max(value / 9.80665 * 1000.0, -32768), 32767))
             for value in specific_force

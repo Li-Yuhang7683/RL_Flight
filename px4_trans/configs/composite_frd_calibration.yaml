@@ -1,0 +1,25 @@
+# Geometry reference, not a measured IMU calibration or an auto-loaded PX4 file.
+# All vectors use right-handed FRD; matrices are row-major, target <- source.
+# C forward is A forward rotated +30 deg about A +Z (right), and B forward
+# rotated -30 deg about B +Z (left). C lies between the aircraft headings.
+schema_version: 1
+body_frame: FRD
+quaternion_order: wxyz
+rotation_convention: target_from_source
+world_frame: NED
+parameters:
+  CEKF_MSTR_YAW: -30.0 # vector mapping A -> C; not C heading expressed in A
+  CEKF_SLV_YAW: 30.0  # vector mapping B -> C
+R_CA:
+  - [0.8660254037844386, 0.5, 0.0]
+  - [-0.5, 0.8660254037844386, 0.0]
+  - [0.0, 0.0, 1.0]
+R_CB:
+  - [0.8660254037844386, -0.5, 0.0]
+  - [0.5, 0.8660254037844386, 0.0]
+  - [0.0, 0.0, 1.0]
+# R_AB = transpose(R_CA) * R_CB, maps B -> A (FRD +60 deg).
+R_AB:
+  - [0.5, -0.8660254037844386, 0.0]
+  - [0.8660254037844386, 0.5, 0.0]
+  - [0.0, 0.0, 1.0]

@@ -287,6 +287,43 @@ void test_link_test_round_trip()
 	CHECK(master->link_test_stats().offered_bytes_per_second > 0);
 }
 
+void test_v2_preheat_and_yaw_reference()
+{
+	auto master = std::make_unique<airlink::Session>(0x12345678u);
+	auto slave = std::make_unique<airlink::Session>(0x12345678u);
+	master->start(airlink::Role::Master, 0x11111111u, ready_local(true), 80'000);
+	slave->start(airlink::Role::Slave, 0x22222222u, ready_local(false), 80'000);
+	establish_ready(*master, *slave, 81'000);
+
+	airlink::SensorState sensor{};
+	sensor.status_flags = airlink::AccelValid | airlink::GyroValid
+			      | airlink::AttitudeValid | airlink::AngularVelocityValid
+			      | airlink::SampleFresh;
+	sensor.imu_sample_time_us = 82'000;
+	sensor.attitude_sample_time_us = 82'000;
+	sensor.attitude_q[0] = 32767;
+	CHECK(slave->queue_sensor_state(sensor, 83'000));
+	pump(*slave, *master, 83'001);
+	CHECK(master->state() == airlink::LinkState::Ready);
+	CHECK(master->last_peer_sensor_arrival_us() == 83'001);
+	CHECK(master->last_peer_sensor_sequence() != 0);
+
+	airlink::YawReference reference{};
+	reference.source_sample_time_us = 0x89ABCDEFu;
+	reference.yaw_rad = 0.25f;
+	reference.yaw_sigma_rad = 0.1f;
+	reference.reset_counter = 3;
+	reference.quality = 2;
+	reference.flags = airlink::YawValid;
+	CHECK(master->queue_yaw_reference(reference, 84'000));
+	pump(*master, *slave, 84'001);
+	CHECK(slave->last_peer_yaw_arrival_us() == 84'001);
+	CHECK(slave->last_peer_yaw_sequence() != 0);
+
+	reference.flags = airlink::ReservedYawReferenceFlags;
+	CHECK(!master->queue_yaw_reference(reference, 85'000));
+}
+
 } // namespace
 
 int main()
@@ -297,6 +334,7 @@ int main()
 	test_unknown_command_gets_unsupported_ack();
 	test_reliable_retry_limit();
 	test_link_test_round_trip();
+	test_v2_preheat_and_yaw_reference();
 
 	if (g_failures != 0) {
 		std::fprintf(stderr, "%d AIRLINK session check(s) failed\n", g_failures);

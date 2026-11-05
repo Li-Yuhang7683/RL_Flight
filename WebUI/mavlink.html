@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="本地 MAVLink 数据解析、双机 IMU 检查与自由绘图">
+  <title>MAVLink Lab · RL Flight</title>
+  <link rel="stylesheet" href="./mavlink.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./"><span class="brand-icon" aria-hidden="true">⌁</span><span>RL FLIGHT<small>MAVLINK LAB</small></span></a>
+  <div class="header-title">遥测工作台 <span class="tag">LOCAL</span></div>
+  <div class="header-actions"><span id="connectionBadge" class="status"><i></i>未连接</span><button id="openConnection">连接数据源</button></div>
+</header>
+<section class="connection-panel" id="connectionPanel" aria-label="数据源连接">
+  <div class="section-intro"><span class="eyebrow">DATA SOURCE</span><h1>让每个信号，都有自己的曲线。</h1><p>直接解析 MAVLink · 两机 IMU · CEKF 融合姿态与状态 · 自由组合字段</p></div>
+  <form id="connectionForm">
+    <label>连接方式<select id="transport"><option value="serial">串口 / USB</option><option value="udp">UDP 监听</option><option value="udpout">UDP 远端</option><option value="tcp">TCP 客户端</option><option value="demo">演示数据</option></select></label>
+    <label class="endpoint-label">设备 / 地址<input id="endpoint" value="/dev/ttyACM0" list="serialPorts" placeholder="/dev/ttyACM0"><datalist id="serialPorts"></datalist></label>
+    <label id="baudLabel">波特率<select id="baud"><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option><option>921600</option><option>1500000</option><option>2000000</option></select></label>
+    <button class="primary" id="connectButton" type="submit">连接数据源 <span>↗</span></button>
+    <button id="disconnectButton" type="button">断开</button>
+    <div class="connection-options"><label class="check"><input id="heartbeat" type="checkbox" checked>发送 GCS 心跳（1 Hz）</label><button class="text-button" id="refreshPorts" type="button">刷新串口</button><button class="text-button" id="demoButton" type="button">先试试演示数据 →</button></div>
+  </form>
+  <div class="connection-foot"><span id="sourceHint">串口位于运行 Python 服务的电脑上。请关闭占用该串口的 QGC。</span><details><summary>未收到遥测？请求输出频率</summary><div class="stream-options"><label>系统 ID<input id="targetSystem" type="number" min="1" max="255" value="1"></label><label>组件 ID<input id="targetComponent" type="number" min="1" max="255" value="1"></label><label>Hz<input id="streamHz" type="number" min="1" max="50" value="10"></label><button id="requestStream" type="button">请求 IMU / CEKF 输出</button></div><p>向选定飞控发送 SET_MESSAGE_INTERVAL（消息 251）。需使用已包含 COMPOSITE_IMU 流的固件；本工具不会启动 CEKF。</p><p id="streamStatus" role="status"></p></details></div>
+</section>
+<div id="notice" class="notice" role="status" hidden></div>
+<section class="metrics" aria-label="链路概况">
+  <div><span class="metric-dot"></span><span>数据源<strong id="sourceMetric">等待连接</strong></span></div>
+  <div><span>接收速率<strong><b id="rateMetric">0</b><small>msg/s</small></strong></span></div>
+  <div><span>发现字段<strong><b id="fieldsMetric">0</b><small>signals</small></strong></span></div>
+  <div><span>最近接收<strong id="ageMetric">—</strong></span><span class="metric-note" id="packetMetric">0 条消息 · 0 错包</span></div>
+</section>
+<main class="workspace">
+  <aside class="signal-panel">
+    <div class="panel-heading"><div><span class="eyebrow">SIGNAL LIBRARY</span><h2>字段列表 <span id="signalCount">0</span></h2></div><button id="clearSelection" class="text-button" title="清空当前图表的曲线">清空</button></div>
+    <div class="field-search"><span aria-hidden="true">⌕</span><input id="fieldSearch" type="search" placeholder="搜索名称、来源或单位…" aria-label="搜索字段"><kbd>/</kbd></div>
+    <div class="filters"><button class="filter active" data-filter="all">全部</button><button class="filter" data-filter="imu">IMU</button><button class="filter" data-filter="cekf">CEKF</button><button class="filter" data-filter="A">主机 A</button><button class="filter" data-filter="B">从机 B</button></div>
+    <label class="source-select">消息来源<select id="sourceFilter"><option value="">所有系统 / 组件</option></select></label>
+    <p class="selection-hint">勾选字段，添加到<span id="activeChartLabel">当前图表</span></p>
+    <div class="signal-list" id="signalList"><div class="empty-signals"><span>⌁</span><strong>等待第一个信号</strong><p>连接主机可查看两机数据，<br>也可以先载入演示数据。</p></div></div>
+    <div class="signal-footer"><span class="tiny-dot"></span>R 原始机体系 · C 组合体坐标系<br><span class="muted">保留最近 5 分钟，最多 120,000 个采样点</span></div>
+  </aside>
+  <section class="plot-workspace">
+    <div class="plot-toolbar"><div><span class="eyebrow">LIVE WORKSPACE</span><h2>信号绘图</h2></div><div class="toolbar-actions"><select id="preset" aria-label="绘图预设"><option value="compare">预设：原始 / C 系对比</option><option value="raw">预设：两机原始 IMU</option><option value="mapped">预设：两机 C 系 IMU</option><option value="cekf">预设：CEKF 融合</option><option value="cekf-status">预设：CEKF 状态</option><option value="custom">自由布局</option></select><button id="addChart">＋ 添加图表</button><button id="exportCsv">↓ CSV</button></div></div>
+    <div class="timeline-toolbar"><div class="live-state" id="liveState"><i></i><span>实时跟随</span></div><label>时间窗<select id="timeWindow"><option value="5">5 秒</option><option value="15">15 秒</option><option value="30" selected>30 秒</option><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="300">5 分钟</option></select></label><button id="pauseButton">Ⅱ 暂停查看</button><button id="resetView" class="text-button">回到实时</button><span class="interaction-hint">滚轮缩放 · 拖动平移 · 双击回到实时</span></div>
+    <div id="chartGrid" class="chart-grid"></div>
+    <footer class="workspace-footer"><span id="bufferStatus">等待数据 · 所有曲线使用本地接收时间</span><span>CEKF INDEPENDENT <span class="tiny-dot"></span></span></footer>
+  </section>
+</main>
+<template id="chartTemplate">
+  <article class="chart-card" tabindex="0" aria-label="绘图面板">
+    <div class="chart-heading"><div><span class="chart-index"></span><input class="chart-title" aria-label="图表标题" maxlength="60"></div><div class="chart-tools"><button class="chart-scale text-button" title="设置纵轴范围">纵轴</button><button class="chart-remove text-button" title="删除图表" aria-label="删除图表">×</button></div></div>
+    <div class="scale-panel" hidden><span>左右轴分别自适应；填写范围可固定两轴</span><label>最小<input class="y-min" type="number" step="any" placeholder="自动"></label><label>最大<input class="y-max" type="number" step="any" placeholder="自动"></label><button class="scale-apply">应用</button><button class="scale-reset text-button">自动</button></div>
+    <div class="plot-area"><canvas aria-label="时间曲线"></canvas><div class="chart-empty"><span>＋</span><strong>选择你想看的信号</strong><p>点击此图，再在左侧勾选字段</p></div><div class="plot-tooltip" hidden></div></div>
+    <div class="chart-legend"></div>
+    <div class="chart-bottom"><span class="chart-units">自动纵轴</span><span class="chart-traces">0 条曲线</span></div>
+  </article>
+</template>
+<script type="module" src="./mavlink.js"></script>
+</body>
+</html>

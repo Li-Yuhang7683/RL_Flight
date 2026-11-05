@@ -1,5 +1,11 @@
 # RL Flight WebUI
 
+本地 MAVLink 数据解析与自由绘图工作台见
+[`MAVLINK_MONITOR_zh.md`](MAVLINK_MONITOR_zh.md)。独立启动
+`python WebUI/mavlink_server.py`（在仓库根目录执行），访问
+`http://127.0.0.1:8081`，支持串口 / UDP / TCP、双机原始和 C 系 IMU、任意字段绘图。
+
+
 PX4 飞控板 HIL 后端的协议、参数和操作步骤见
 [`Docs/PX4_HIL_WEBUI_zh.md`](../Docs/PX4_HIL_WEBUI_zh.md)。
 

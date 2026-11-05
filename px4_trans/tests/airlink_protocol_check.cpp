@@ -173,10 +173,10 @@ void test_sensor_golden()
 				   frame_len));
 	CHECK(frame_len == 64);
 	expect_bytes(output, hex(
-				     "A5 5A 01 01 00 01 02 01 40 30 20 10 2A 00 2A 00"
+				     "A5 5A 02 01 00 01 02 01 40 30 20 10 2A 00 2A 00"
 				     "FF 07 40 42 0F 00 10 4A 0F 00 00 00 00 00 19 FB"
 				     "00 00 00 00 00 00 FF 7F 00 00 00 00 00 00 00 00"
-				     "00 00 00 00 70 17 70 17 D0 39 EE 8B 82 05 5A A5"));
+				     "00 00 00 00 70 17 70 17 D0 39 17 9B B1 A2 5A A5"));
 
 	const auto boundary_frame = hex(
 					    "A5 5A 01 01 00 01 02 01 40 30 20 10 FF FF 2A 00"
@@ -250,6 +250,44 @@ void test_sensor_boundaries_and_optional_sources()
 	CHECK(airlink::encode_sensor_state(input, state));
 	CHECK((state.status_flags & airlink::BatteryValid) != 0);
 	CHECK(state.battery_voltage_mv == UINT16_MAX);
+}
+
+void test_yaw_reference_round_trip()
+{
+	airlink::YawReference reference{};
+	reference.source_sample_time_us = 0x89ABCDEFu;
+	reference.yaw_rad = -3.1415f;
+	reference.yaw_sigma_rad = 0.1234f;
+	reference.reset_counter = 7;
+	reference.quality = 2;
+	reference.flags = airlink::YawValid;
+	uint8_t payload[airlink::kYawReferencePayloadSize] {};
+	CHECK(airlink::encode_yaw_reference(reference, payload));
+	expect_bytes(payload, hex(
+				      "EF CD AB 89 49 85 D2 04 07 02 01 00"));
+
+	airlink::YawReference decoded{};
+	CHECK(airlink::decode_yaw_reference(payload, sizeof(payload), decoded));
+	CHECK(decoded.source_sample_time_us == reference.source_sample_time_us);
+	CHECK(std::fabs(decoded.yaw_rad - reference.yaw_rad) <= 1e-4f);
+	CHECK(std::fabs(decoded.yaw_sigma_rad - reference.yaw_sigma_rad) <= 1e-4f);
+	CHECK(decoded.reset_counter == reference.reset_counter);
+	CHECK(decoded.quality == reference.quality);
+	CHECK(decoded.flags == reference.flags);
+
+	reference.flags |= airlink::ReservedYawReferenceFlags;
+	CHECK(!airlink::encode_yaw_reference(reference, payload));
+
+	airlink::Header header_value = header(airlink::FrameType::Data,
+					     static_cast<uint8_t>(airlink::MessageId::YawReference),
+					     airlink::Role::Master, 0x10203040u, 9,
+					     airlink::kYawReferencePayloadSize);
+	uint16_t minimum = 0;
+	uint16_t maximum = 0;
+	CHECK(airlink::expected_payload_length(header_value.frame_type,
+					       header_value.message_id, minimum, maximum));
+	CHECK(minimum == airlink::kYawReferencePayloadSize);
+	CHECK(maximum == airlink::kYawReferencePayloadSize);
 }
 
 void test_quaternion_rules()
@@ -361,7 +399,7 @@ void test_fixed_message_contracts()
 	handshake.config_crc32c = 0x89ABCDEFu;
 	CHECK(airlink::encode_handshake(handshake, handshake_payload));
 	expect_bytes(handshake_payload, hex(
-					     "40 30 20 10 44 33 22 11 01 00 01 00"
+					     "40 30 20 10 44 33 22 11 02 00 01 00"
 					     "FF 00 00 00 C9 00 00 00 EF CD AB 89"));
 
 	uint8_t output[airlink::kMaxFrameSize] {};
@@ -372,11 +410,11 @@ void test_fixed_message_contracts()
 	CHECK(airlink::build_frame(handshake_header, handshake_payload, sizeof(handshake_payload),
 				   output, sizeof(output), frame_len));
 	CHECK(frame_len == 46);
-	CHECK(airlink::read_u32(output + frame_len - 6) == 0x4D6CCDE8u);
+	CHECK(airlink::read_u32(output + frame_len - 6) == 0x9A044D7Bu);
 	expect_bytes(output, hex(
-				     "A5 5A 01 02 00 09 01 02 88 77 66 55 01 01 18 00"
-				     "40 30 20 10 44 33 22 11 01 00 01 00 FF 00 00 00"
-				     "C9 00 00 00 EF CD AB 89 E8 CD 6C 4D 5A A5"));
+				     "A5 5A 02 02 00 09 01 02 88 77 66 55 01 01 18 00"
+				     "40 30 20 10 44 33 22 11 02 00 01 00 FF 00 00 00"
+				     "C9 00 00 00 EF CD AB 89 7B 4D 04 9A 5A A5"));
 
 	airlink::ReliableEvent event{};
 	event.target_peer_session = 0x10203040u;
@@ -391,10 +429,10 @@ void test_fixed_message_contracts()
 	CHECK(airlink::build_frame(arm_header, event_payload, sizeof(event_payload), output, sizeof(output),
 				   frame_len));
 	CHECK(frame_len == 34);
-	CHECK(airlink::read_u32(output + frame_len - 6) == 0xF5F84BBFu);
+	CHECK(airlink::read_u32(output + frame_len - 6) == 0x830BC7AEu);
 	expect_bytes(output, hex(
-				     "A5 5A 01 02 01 07 01 02 88 77 66 55 00 01 0C 00"
-				     "40 30 20 10 D4 C3 B2 A1 01 00 00 00 BF 4B F8 F5"
+				     "A5 5A 02 02 01 07 01 02 88 77 66 55 00 01 0C 00"
+				     "40 30 20 10 D4 C3 B2 A1 01 00 00 00 AE C7 0B 83"
 				     "5A A5"));
 }
 
@@ -555,6 +593,7 @@ int main()
 	test_crc_and_primitives();
 	test_sensor_golden();
 	test_sensor_boundaries_and_optional_sources();
+	test_yaw_reference_round_trip();
 	test_quaternion_rules();
 	test_actuator_encoding();
 	test_fixed_message_contracts();

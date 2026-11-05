@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {nearestSample, numericRange, visibleSegments, csvCell} from '../mavlink_plot.mjs';
+const samples = [[1, 0, 'x', 1], [2, .1, 'x', 5], [3, .2, 'x', null], [4, .3, 'x', 2], [5, 2, 'x', 3]];
+assert.equal(nearestSample(samples, .09), samples[1]);
+assert.equal(nearestSample([], 0), null);
+assert.equal(nearestSample(samples, -1), samples[0]);
+assert.equal(nearestSample(samples, 100), samples.at(-1));
+assert.equal(visibleSegments(samples, 0, 3, 300).length, 3, 'NaN and telemetry gaps break paths');
+const spike = Array.from({length: 1000}, (_, i) => [i, i / 1000, 'x', i === 455 ? 100 : 0]);
+assert(visibleSegments(spike, 0, 1, 10).flat().some(s => s[3] === 100), 'pixel decimation preserves spikes');
+assert.deepEqual(numericRange([null, NaN, Infinity], -5, 5), [-5, 5]);
+assert(numericRange([0, 0])[0] < 0 && numericRange([0, 0])[1] > 0);
+assert.equal(csvCell('x,"y"'), '"x,""y"""');
+console.log('MAVLink plot checks passed');
