@@ -134,13 +134,6 @@ def load_model(
     airframe = resolve_airframe(airframe_id, registry)
     if airframe["platform_family"] != "micoair_h743-v2_micro_coaxial_3servo":
         raise ValueError("incompatible airframe platform for coaxial LQI")
-    from flight_controller import (
-        ControllerContext,
-        create_controller,
-        load_controller_config,
-    )
-    from simenv.config import load_and_materialize
-
     simulator_path = ROOT / deployment["simulator_config"]
     controller_path = ROOT / deployment["controller_config"]
     report_path = ROOT / deployment["identified_model"]["report"]
@@ -148,6 +141,11 @@ def load_model(
     # Preserve the existing airframe-1 generator. New airframes require
     # independently documented parameter and motor measurements.
     if airframe_id != "airframe-1":
+        if deployment.get("calibration_ready") is not True:
+            raise ValueError(
+                "new airframe is uncalibrated: calibration_ready must be true "
+                "after independent physical measurements and report review"
+            )
         if not isinstance(deployment.get("physical_motor_pole_count"), int) or (
             deployment["physical_motor_pole_count"] <= 0
         ):
@@ -156,11 +154,6 @@ def load_model(
             raise ValueError("final motor output scale must be calibrated")
         if deployment.get("flight_authorized") is not False:
             raise ValueError("new airframe generator requires flight_authorized=false")
-        if deployment.get("calibration_ready") is not True:
-            raise ValueError(
-                "new airframe is uncalibrated: calibration_ready must be true "
-                "after independent physical measurements and report review"
-            )
         if airframe["controller_contract"] != (
             "pilot_acceleration_dual_motor_common_differential_servo_roll_pitch"
         ):
@@ -187,6 +180,13 @@ def load_model(
             deployment["lower_motor_speed_calibration"]["path"]
         ):
             raise ValueError("airframe-3 requires independent lower motor CSV")
+
+    from flight_controller import (
+        ControllerContext,
+        create_controller,
+        load_controller_config,
+    )
+    from simenv.config import load_and_materialize
 
     materialized = load_and_materialize(
         simulator_path, 1, torch.device("cpu"), torch.float64
