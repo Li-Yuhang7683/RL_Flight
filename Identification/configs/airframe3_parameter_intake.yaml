@@ -1,0 +1,48 @@
+# airframe-3 measurement intake, NOT an operational simulator configuration.
+# Every null means NOT MEASURED. Do not fill from airframe-1.
+schema_version: 1
+airframe_id: airframe-3
+status: awaiting_independent_calibration
+flight_authorized: false
+hardware:
+  controller_board: null  # confirm MicoAir H743 V2 and exact firmware target
+  px4_firmware_git_sha: null
+  upper_motor_model: null
+  lower_motor_model: null
+  upper_propeller: null
+  lower_propeller: null
+  esc_and_protocol: null
+  servo_models: [null, null, null]
+  motor_pole_count: null
+physical:
+  mass_kg: null
+  center_of_mass_body_frd_m: [null, null, null]
+  inertia_diagonal_kg_m2: [null, null, null]
+  inertia_products_kg_m2: [null, null, null]
+  motor_reaction_torque_coefficients: [null, null]
+  thrust_coefficients: null
+  motor_time_constants_s: [null, null]
+  servo_time_constants_s: [null, null, null]
+  servo_angle_per_command_rad: [null, null, null]
+  servo_deadzone: [null, null, null]
+  servo_backlash_rad: [null, null, null]
+  aerodynamic_grid_geometry_and_effectiveness: null
+calibration:
+  upper_command_rpm_csv: null
+  lower_command_rpm_csv: null
+  command_to_physical_output_scale: null
+  thrust_measurement_source: null
+  measurement_date_utc: null
+  measurement_uncertainty: null
+identification:
+  raw_logs_directory: log/airframe-3/first_identification
+  canonical_dataset: Identification/datasets/airframe-3/first_identification_v1
+  offline_report: null
+  source_network_checkpoints: [null, null, null]
+  quality_gate_report: null
+review:
+  responsible_engineer: null
+  data_and_units_verified: false
+  simulation_review_passed: false
+  hil_review_passed: false
+  actuator_outputs_enabled: false

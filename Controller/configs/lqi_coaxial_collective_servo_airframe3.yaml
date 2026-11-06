@@ -1,0 +1,32 @@
+# Airframe-3 LQI DESIGN TEMPLATE. Not a tuned or validated controller.
+# Q/R values below define design weights, NOT measured physical parameters.
+# The simulator path intentionally does not exist until airframe-3 is calibrated.
+type: lqi_coaxial_collective_servo
+airframe:
+  id: airframe-3
+  simulator_config: SimEnv/configs/sim2real_micro_coaxial_airframe3.yaml
+  identification_report: Identification/datasets/airframe-3/first_identification_v1/offline_identification.json
+  upper_motor_speed_calibration: log/airframe-3/calibration/upper_motor.csv
+  lower_motor_speed_calibration: log/airframe-3/calibration/lower_motor.csv
+params:
+  collective:
+    pilot_minimum: 0.0
+    pilot_maximum: 1.0
+    maximum_acceleration_m_s2: 5.0
+    acceleration_kp: 1.0
+    acceleration_ki: 4.0
+    acceleration_integral_limit_m_s2: 2.0
+    acceleration_filter_time_constant_s: 0.010
+    minimum_thrust_fraction: 0.02
+    maximum_thrust_fraction: 0.98
+    zero_throttle_threshold: 0.02
+  lqi:
+    state_scales: [0.3490658, 0.3490658, 1.4, 1.4, 3.0, 0.20, 0.20, 0.80]
+    input_scales: [0.008, 0.008, 0.020]
+    input_weight_scale: 0.15
+  allocation:
+    maximum_moment_n_m: [0.009, 0.009, 0.025]
+    motor_effectiveness_grid: [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+    servo_effectiveness_scale: 1.0
+    motor_regularization: 1.0e-10
+    servo_regularization: 1.0e-10
