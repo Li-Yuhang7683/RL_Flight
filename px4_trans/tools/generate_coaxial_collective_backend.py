@@ -119,13 +119,6 @@ def load_model(
 ) -> tuple[
     dict[str, np.ndarray | float | int], dict[str, Any], dict[str, Any]
 ]:
-    from flight_controller import (
-        ControllerContext,
-        create_controller,
-        load_controller_config,
-    )
-    from simenv.config import load_and_materialize
-
     from flight_identification.airframe import (
         resolve_airframe,
         validate_airframe_payload,
@@ -141,6 +134,13 @@ def load_model(
     airframe = resolve_airframe(airframe_id, registry)
     if airframe["platform_family"] != "micoair_h743-v2_micro_coaxial_3servo":
         raise ValueError("incompatible airframe platform for coaxial LQI")
+    from flight_controller import (
+        ControllerContext,
+        create_controller,
+        load_controller_config,
+    )
+    from simenv.config import load_and_materialize
+
     simulator_path = ROOT / deployment["simulator_config"]
     controller_path = ROOT / deployment["controller_config"]
     report_path = ROOT / deployment["identified_model"]["report"]
@@ -148,6 +148,14 @@ def load_model(
     # Preserve the existing airframe-1 generator. New airframes require
     # independently documented parameter and motor measurements.
     if airframe_id != "airframe-1":
+        if not isinstance(deployment.get("physical_motor_pole_count"), int) or (
+            deployment["physical_motor_pole_count"] <= 0
+        ):
+            raise ValueError("physical_motor_pole_count must be measured")
+        if deployment.get("final_motor_output_scale") is None:
+            raise ValueError("final motor output scale must be calibrated")
+        if deployment.get("flight_authorized") is not False:
+            raise ValueError("new airframe generator requires flight_authorized=false")
         if deployment.get("calibration_ready") is not True:
             raise ValueError(
                 "new airframe is uncalibrated: calibration_ready must be true "
@@ -932,12 +940,21 @@ def main() -> None:
     args = parser.parse_args()
     deployment_config = args.deployment_config.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
+    if not output_dir.is_relative_to(ROOT / "px4_trans/generated"):
+        raise ValueError("output-dir must be inside px4_trans/generated")
+
     payload_path = output_dir / "LqiCoaxialCollectivePayload.hpp"
     golden_header = output_dir / "lqi_coaxial_collective_golden.hpp"
     golden_json = output_dir / "lqi_coaxial_collective_golden.json"
     manifest_path = output_dir / "lqi_coaxial_collective_manifest.json"
 
     model, deployment, metadata = load_model(deployment_config)
+    if metadata["airframe_id"] != "airframe-1":
+        expected_output_dir = ROOT / "px4_trans/generated" / metadata["airframe_id"]
+        if not output_dir.is_relative_to(expected_output_dir):
+            raise ValueError(
+                "new airframe model must be archived under its own generated directory"
+            )
     # New airframes cannot silently overwrite the active build payload.
     should_activate = (
         args.activate or (
