@@ -340,10 +340,21 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
     secondary_checkpoint_path = None
     secondary_output_axes: tuple[str, ...] = ()
     secondary_sample_hz = None
-    if args.secondary_checkpoint:
-        secondary_checkpoint_path = Path(args.secondary_checkpoint).expanduser().resolve()
+    secondary_2_path = None
+    secondary_2_axes: tuple[str, ...] = ()
+    secondary_2_sample_hz = None
+    used_axes: set[str] = set()
+    checkpoint_sha = {}
+
+    for slot, path_value, axes_value in (
+        (1, args.secondary_checkpoint, args.secondary_output_axes),
+        (2, args.secondary_checkpoint_2, args.secondary_output_axes_2),
+    ):
+        if not path_value:
+            continue
+        secondary_path = Path(path_value).expanduser().resolve()
         secondary = torch.load(
-            secondary_checkpoint_path, map_location="cpu", weights_only=False
+            secondary_path, map_location="cpu", weights_only=False
         )
         if secondary.get("artifact_type") != "sim2real_composite_servo_identifier":
             raise ValueError("secondary checkpoint must be a composite identifier")
@@ -356,7 +367,7 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
         ):
             if tuple(secondary[name]) != tuple(checkpoint[name]):
                 raise ValueError(f"secondary checkpoint differs in {name}")
-        secondary_features, secondary_valid, secondary_sample_hz = load_canonical_log_bundle(
+        secondary_features, secondary_valid, secondary_hz = load_canonical_log_bundle(
             args.logs,
             feature_names,
             500.0 / int(secondary["downsample"]),
@@ -367,22 +378,27 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
         secondary_prediction, _, _ = _predict_logs(
             secondary, secondary_features, secondary_valid, selected, device
         )
-        secondary_output_axes = tuple(
-            value.strip()
-            for value in args.secondary_output_axes.split(",")
-            if value.strip()
-        )
-        if not secondary_output_axes or any(
-            axis not in {"roll", "pitch", "yaw"}
-            for axis in secondary_output_axes
-        ):
-            raise ValueError("secondary-output-axes must select roll, pitch, or yaw")
+        axes = tuple(v.strip() for v in axes_value.split(",") if v.strip())
+        if not axes or any(axis not in {"roll", "pitch", "yaw"} for axis in axes):
+            raise ValueError("secondary axes must select roll, pitch, or yaw")
+        if used_axes.intersection(axes):
+            raise ValueError("secondary output axis selections must not overlap")
+        used_axes.update(axes)
         selected_columns = [
             index
             for index, name in enumerate(checkpoint["label_names"])
-            if any(f".{axis}." in name for axis in secondary_output_axes)
+            if any(f".{axis}." in name for axis in axes)
         ]
         prediction[selected_columns] = secondary_prediction[selected_columns]
+        checkpoint_sha[slot] = checkpoint_sha256(secondary_path)
+        if slot == 1:
+            secondary_checkpoint_path = secondary_path
+            secondary_output_axes = axes
+            secondary_sample_hz = secondary_hz
+        else:
+            secondary_2_path = secondary_path
+            secondary_2_axes = axes
+            secondary_2_sample_hz = secondary_hz
     basis_tau = tuple(float(value) for value in checkpoint["basis_time_constants_s"])
     mode_indices = tuple(int(value) for value in checkpoint["adaptive_mode_indices"])
     servo_slopes = checkpoint["servo_command_slopes"].numpy()
@@ -456,6 +472,10 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
             None if secondary_checkpoint_path is None else str(secondary_checkpoint_path)
         ),
         "secondary_output_axes": secondary_output_axes,
+        "secondary_checkpoint_2": (
+            None if secondary_2_path is None else str(secondary_2_path)
+        ),
+        "secondary_output_axes_2": secondary_2_axes,
         "log_bundle": str(log_bundle_path),
         "source_sha256": {
             "log_bundle": file_sha256(log_bundle_path),
@@ -465,6 +485,7 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
                 if secondary_checkpoint_path is None
                 else checkpoint_sha256(secondary_checkpoint_path)
             ),
+            "secondary_checkpoint_2": checkpoint_sha.get(2),
             "quality_calibration": (
                 None
                 if quality_calibration_path is None
@@ -476,6 +497,7 @@ def infer(args: argparse.Namespace) -> Mapping[str, Any]:
         "effective_sample_hz_by_checkpoint": {
             "primary": sample_hz,
             "secondary": secondary_sample_hz,
+            "secondary_2": secondary_2_sample_hz,
         },
         "selected_flight_indices": selected.tolist(),
         "selected_information_scores": score[selected].tolist(),
@@ -538,6 +560,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--secondary-checkpoint")
     parser.add_argument("--secondary-output-axes", default="roll,pitch")
+    parser.add_argument("--secondary-checkpoint-2")
+    parser.add_argument("--secondary-output-axes-2", default="pitch")
     parser.add_argument("--logs", required=True)
     parser.add_argument(
         "--airframe-id",
