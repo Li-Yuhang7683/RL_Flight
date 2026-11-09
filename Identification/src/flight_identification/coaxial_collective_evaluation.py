@@ -180,6 +180,7 @@ def _simulate_variant(
     command_change_s: float,
     measurement_mode: str,
     control_hz: int,
+    controller_parameters: Mapping[str, torch.Tensor] | None = None,
 ) -> dict[str, Any]:
     from flight_controller import (
         ControllerContext,
@@ -241,7 +242,11 @@ def _simulate_variant(
         device=device,
         dtype=dtype,
         control_dt=1.0 / control_hz,
-        parameters=materialized.parameters,
+        parameters=(
+            materialized.parameters
+            if controller_parameters is None
+            else controller_parameters
+        ),
     )
     controller = create_controller(config, context)
     plant = LocalPlantModel(materialized.parameters)
