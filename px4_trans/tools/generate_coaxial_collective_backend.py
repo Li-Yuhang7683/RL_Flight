@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the airframe-1 coaxial collective/servo LQI firmware payload."""
+"""Generate airframe-bound coaxial collective/servo LQI firmware payloads."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def array_lines(name: str, values: np.ndarray) -> list[str]:
     return result
 
 
-def load_calibration(path: Path) -> list[dict[str, Any]]:
+def load_calibration(path: Path, motor_index: int = 1) -> list[dict[str, Any]]:
     with path.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     if not rows:
@@ -89,8 +89,8 @@ def load_calibration(path: Path) -> list[dict[str, Any]]:
     for row in rows:
         if row["quality"] != "正常" or row["mode"] != "HARDWARE":
             raise ValueError(f"rejected motor calibration row: {row}")
-        if int(row["motor"]) != 1:
-            raise ValueError("upper-rotor CSV must use motor=1")
+        if int(row["motor"]) != motor_index:
+            raise ValueError(f"motor calibration must use motor={motor_index}")
         parsed.append(
             {
                 "physical_command": float(row["command_normalized"]),
@@ -116,9 +116,84 @@ def interpolate_linear(
 
 def load_model(
     deployment_config: Path,
+    *,
+    allow_missing_identification_report: bool = False,
 ) -> tuple[
     dict[str, np.ndarray | float | int], dict[str, Any], dict[str, Any]
 ]:
+    from flight_identification.airframe import (
+        resolve_airframe,
+        validate_airframe_payload,
+    )
+
+    deployment = yaml.safe_load(
+        deployment_config.read_text(encoding="utf-8")
+    )
+    airframe_id = str(deployment.get("airframe_id", ""))
+    registry = ROOT / deployment.get(
+        "airframe_registry", "Identification/configs/airframes.yaml"
+    )
+    airframe = resolve_airframe(airframe_id, registry)
+    if airframe["platform_family"] != "micoair_h743-v2_micro_coaxial_3servo":
+        raise ValueError("incompatible airframe platform for coaxial LQI")
+    simulator_path = ROOT / deployment["simulator_config"]
+    controller_path = ROOT / deployment["controller_config"]
+    report_path = ROOT / deployment["identified_model"]["report"]
+    # Only the explicit inherited-baseline path may omit this historical
+    # provenance file. Ordinary deployment still requires it.
+    if allow_missing_identification_report and airframe_id != "airframe-1":
+        raise ValueError(
+            "missing identification report exception is only for airframe-1 source baseline"
+        )
+    if not report_path.is_file() and not allow_missing_identification_report:
+        raise FileNotFoundError(
+            "identification report is required for this deployment: "
+            f"{report_path}"
+        )
+
+    # Preserve the existing airframe-1 generator. New airframes require
+    # independently documented parameter and motor measurements.
+    if airframe_id != "airframe-1":
+        if deployment.get("calibration_ready") is not True:
+            raise ValueError(
+                "new airframe is uncalibrated: calibration_ready must be true "
+                "after independent physical measurements and report review"
+            )
+        if not isinstance(deployment.get("physical_motor_pole_count"), int) or (
+            deployment["physical_motor_pole_count"] <= 0
+        ):
+            raise ValueError("physical_motor_pole_count must be measured")
+        if deployment.get("final_motor_output_scale") is None:
+            raise ValueError("final motor output scale must be calibrated")
+        if deployment.get("flight_authorized") is not False:
+            raise ValueError("new airframe generator requires flight_authorized=false")
+        if airframe["controller_contract"] != (
+            "pilot_acceleration_dual_motor_common_differential_servo_roll_pitch"
+        ):
+            raise ValueError("airframe controller contract does not match model 2")
+        sources = (
+            deployment["simulator_config"],
+            deployment["controller_config"],
+            deployment["identified_model"]["report"],
+            deployment["motor_speed_calibration"]["path"],
+            deployment["lower_motor_speed_calibration"]["path"],
+        )
+        if any("airframe1" in value or "airframe-1" in value for value in sources):
+            raise ValueError("new airframe must not consume airframe-1 calibration")
+        for source in sources:
+            if not (ROOT / source).is_file():
+                raise FileNotFoundError(
+                    f"missing airframe-specific evidence: {source}"
+                )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_airframe_payload(
+            report, airframe_id, artifact_name="offline identification report"
+        )
+        if deployment["motor_speed_calibration"]["path"] == (
+            deployment["lower_motor_speed_calibration"]["path"]
+        ):
+            raise ValueError("airframe-3 requires independent lower motor CSV")
+
     from flight_controller import (
         ControllerContext,
         create_controller,
@@ -126,17 +201,16 @@ def load_model(
     )
     from simenv.config import load_and_materialize
 
-    deployment = yaml.safe_load(
-        deployment_config.read_text(encoding="utf-8")
-    )
-    if deployment.get("airframe_id") != "airframe-1":
-        raise ValueError("coaxial collective firmware requires airframe-1")
-    simulator_path = ROOT / deployment["simulator_config"]
-    controller_path = ROOT / deployment["controller_config"]
     materialized = load_and_materialize(
         simulator_path, 1, torch.device("cpu"), torch.float64
     )
     controller_config = load_controller_config(controller_path)
+    if airframe_id != "airframe-1":
+        if controller_config.get("airframe", {}).get("id") != airframe_id:
+            raise ValueError("controller configuration airframe ID mismatch")
+        configured_simulator = controller_config["airframe"]["simulator_config"]
+        if (ROOT / configured_simulator).resolve() != simulator_path.resolve():
+            raise ValueError("controller simulator must match deployment simulator")
     controller = create_controller(
         controller_config,
         ControllerContext(
@@ -151,37 +225,69 @@ def load_model(
         raise ValueError("deployment controller type is not the new LQI")
 
     calibration_path = ROOT / deployment["motor_speed_calibration"]["path"]
-    calibration = load_calibration(calibration_path)
+    calibration = load_calibration(calibration_path, motor_index=1)
+    lower_calibration_path = None
+    lower_calibration = None
+    if airframe_id != "airframe-1":
+        lower_calibration_path = (
+            ROOT / deployment["lower_motor_speed_calibration"]["path"]
+        )
+        lower_calibration = load_calibration(
+            lower_calibration_path, motor_index=2
+        )
     tables = materialized.parameters[
         "motors.pwm_to_rpm_table"
     ][0].detach().cpu().numpy().astype(np.float32)
-    upper_table = tables[0]
-    lower_table = tables[1]
-    if not np.array_equal(upper_table, lower_table):
-        raise ValueError(
-            "airframe-1 policy requires both coaxial rotors to use the same "
-            "measured upper-rotor in-air table"
+    upper_table, lower_table = tables[0], tables[1]
+    if airframe_id == "airframe-1" and not np.array_equal(upper_table, lower_table):
+        raise ValueError("airframe-1 policy requires identical upper/lower tables")
+
+    def validate_table(
+        rows: list[dict[str, Any]],
+        table: np.ndarray,
+        calibration_config: Mapping[str, Any],
+    ) -> None:
+        # Source rows map exactly to the first calibration section of the
+        # simulator's monotone command-to-speed table, after idle/deadzone.
+        if len(rows) < 3 or len(rows) > len(table) - 2:
+            raise ValueError("invalid motor calibration range")
+        scale = float(
+            calibration_config["physical_command_to_controller_scale"]
         )
-    for expected, table in zip(calibration, upper_table[2:7]):
-        controller_command = (
-            2.0 * expected["physical_command"]
+        if scale <= 0:
+            raise ValueError("motor command scale must be positive")
+        for expected, point in zip(rows, table[2 : 2 + len(rows)]):
+            controller_command = scale * expected["physical_command"]
+            if not math.isclose(
+                float(point[0]), controller_command, abs_tol=1e-7
+            ) or not math.isclose(
+                float(point[1]), expected["rad_s"], rel_tol=2e-6
+            ):
+                raise ValueError(
+                    "simulator motor table disagrees with measured RPM CSV"
+                )
+        if np.any(np.diff(table[:, 0]) <= 0) or np.any(np.diff(table[:, 1]) < 0):
+            raise ValueError("motor table is not monotone")
+        extrapolation = calibration_config.get("above_range_extrapolation", {})
+        last_speed = extrapolation.get("previous_full_scale_rad_s")
+        if last_speed is not None and not math.isclose(
+            float(table[-1, 1]), float(last_speed), abs_tol=1e-6
+        ):
+            raise ValueError("motor full-scale extrapolation mismatch")
+
+    validate_table(
+        calibration, upper_table, deployment["motor_speed_calibration"]
+    )
+    if lower_calibration is not None:
+        validate_table(
+            lower_calibration,
+            lower_table,
+            deployment["lower_motor_speed_calibration"],
         )
-        if not math.isclose(
-            float(table[0]), controller_command, abs_tol=1e-7
-        ):
-            raise ValueError(
-                "upper table command points do not match CSV physical x2 mapping"
-            )
-        if not math.isclose(
-            float(table[1]), expected["rad_s"], rel_tol=2e-6
-        ):
-            raise ValueError(
-                "upper table speed points do not match CSV RPM conversion"
-            )
-    if not math.isclose(
+    elif not math.isclose(
         float(upper_table[-1, 1]), 1200.0, abs_tol=1e-6
     ):
-        raise ValueError("upper extrapolation must terminate at prior 1200 rad/s")
+        raise ValueError("legacy airframe-1 full-scale mismatch")
 
     servo_jacobian = controller.hover_effectiveness[
         :, :, 2:
@@ -266,12 +372,34 @@ def load_model(
         "simulator_sha256": file_sha256(simulator_path),
         "controller_config": str(controller_path.relative_to(ROOT)),
         "controller_sha256": file_sha256(controller_path),
+        "airframe_id": airframe_id,
+        "airframe_number": int(airframe["airframe_number"]),
+        "platform_family": airframe["platform_family"],
         "calibration_path": str(calibration_path.relative_to(ROOT)),
-        "calibration_sha256": file_sha256(calibration_path),
+        "calibration_sha256": (
+            file_sha256(calibration_path) if lower_calibration_path is None
+            else hashlib.sha256(
+                (
+                    file_sha256(calibration_path)
+                    + file_sha256(lower_calibration_path)
+                ).encode("ascii")
+            ).hexdigest()
+        ),
         "calibration_rows": calibration,
+        "lower_calibration_path": (
+            None if lower_calibration_path is None
+            else str(lower_calibration_path.relative_to(ROOT))
+        ),
+        "lower_calibration_sha256": (
+            None if lower_calibration_path is None
+            else file_sha256(lower_calibration_path)
+        ),
+        "lower_calibration_rows": lower_calibration,
+
         "identification_report": deployment["identified_model"]["report"],
-        "identification_report_sha256": file_sha256(
-            ROOT / deployment["identified_model"]["report"]
+        "identification_report_available": report_path.is_file(),
+        "identification_report_sha256": (
+            file_sha256(report_path) if report_path.is_file() else ""
         ),
         "identified_model_checksum": deployment["identified_model"][
             "expected_checksum"
@@ -366,9 +494,9 @@ def write_model_header(
         "namespace lqi_coaxial_collective",
         "{",
         "",
-        'static constexpr uint32_t kAirframeNumber{1u};',
-        'static constexpr char kAirframeId[]{"airframe-1"};',
-        'static constexpr char kPlatformFamily[]{"micoair_h743-v2_micro_coaxial_3servo"};',
+        f"static constexpr uint32_t kAirframeNumber{{{metadata['airframe_number']}u}};",
+        f"static constexpr char kAirframeId[]{{{cpp_string(metadata['airframe_id'])}}};",
+        f"static constexpr char kPlatformFamily[]{{{cpp_string(metadata['platform_family'])}}};",
         f"static constexpr char kCalibrationSha256[]{{{cpp_string(metadata['calibration_sha256'])}}};",
         f"static constexpr char kIdentificationArtifactSha256[]{{{cpp_string(metadata['identification_report_sha256'])}}};",
         "",
@@ -812,20 +940,41 @@ def main() -> None:
         type=Path,
         default=ROOT / "px4_trans/generated/airframe-1",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--no-activate",
         action="store_true",
         help="archive the candidate without replacing the PX4 build headers",
     )
+    group.add_argument(
+        "--activate",
+        action="store_true",
+        help="explicitly stage a validated airframe payload for PX4 compilation",
+    )
     args = parser.parse_args()
     deployment_config = args.deployment_config.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
+    if not output_dir.is_relative_to(ROOT / "px4_trans/generated"):
+        raise ValueError("output-dir must be inside px4_trans/generated")
+
     payload_path = output_dir / "LqiCoaxialCollectivePayload.hpp"
     golden_header = output_dir / "lqi_coaxial_collective_golden.hpp"
     golden_json = output_dir / "lqi_coaxial_collective_golden.json"
     manifest_path = output_dir / "lqi_coaxial_collective_manifest.json"
 
     model, deployment, metadata = load_model(deployment_config)
+    if metadata["airframe_id"] != "airframe-1":
+        expected_output_dir = ROOT / "px4_trans/generated" / metadata["airframe_id"]
+        if not output_dir.is_relative_to(expected_output_dir):
+            raise ValueError(
+                "new airframe model must be archived under its own generated directory"
+            )
+    # New airframes cannot silently overwrite the active build payload.
+    should_activate = (
+        args.activate or (
+            metadata["airframe_id"] == "airframe-1" and not args.no_activate
+        )
+    )
     digest = write_model_header(model, metadata, payload_path)
     vectors = golden_vectors(model)
     write_golden(vectors, golden_header, golden_json)
@@ -833,7 +982,7 @@ def main() -> None:
     active_payload = payload_path
     active_golden_header = golden_header
     active_golden_json = golden_json
-    if not args.no_activate:
+    if should_activate:
         if payload_path.resolve() != PAYLOAD_HEADER.resolve():
             shutil.copyfile(payload_path, PAYLOAD_HEADER)
         if golden_header.resolve() != GOLDEN_HEADER.resolve():
@@ -847,8 +996,9 @@ def main() -> None:
     manifest = {
         "schema_version": 1,
         "artifact_type": "px4_coaxial_collective_lqi_model",
-        "airframe_id": "airframe-1",
-        "airframe_number": 1,
+        "airframe_id": metadata["airframe_id"],
+        "airframe_number": metadata["airframe_number"],
+        "flight_authorized": False,
         "controller_contract": "pilot_acceleration_dual_motor_common_differential_servo_roll_pitch",
         "model_checksum": f"0x{digest:08x}",
         "source": metadata,

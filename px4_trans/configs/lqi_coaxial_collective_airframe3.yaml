@@ -1,0 +1,38 @@
+# Airframe-3 deployment TEMPLATE ONLY: not calibrated, not flight-ready.
+schema_version: 1
+airframe_id: airframe-3
+airframe_registry: Identification/configs/airframes.yaml
+calibration_ready: false  # fail-closed until real measurements and reviewed report
+flight_authorized: false
+
+simulator_config: SimEnv/configs/sim2real_micro_coaxial_airframe3.yaml
+controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe3.yaml
+identified_model:
+  report: Identification/datasets/airframe-3/first_identification_v1/offline_identification.json
+  expected_checksum: null
+
+motor_speed_calibration:
+  path: log/airframe-3/calibration/upper_motor.csv
+  shaft: upper
+  mode: HARDWARE
+  physical_command_to_controller_scale: 2.0
+lower_motor_speed_calibration:
+  path: log/airframe-3/calibration/lower_motor.csv
+  shaft: lower
+  mode: HARDWARE
+  physical_command_to_controller_scale: 2.0
+
+# Re-evaluate physical-command-domain scaling after confirming driver calibration.
+final_motor_output_scale: 0.5
+physical_motor_pole_count: null
+
+manual_reference:
+  roll:
+    limit_rad: 0.3490659
+    time_constant_s: 0.0
+  pitch:
+    limit_rad: 0.3490659
+    time_constant_s: 0.0
+  yaw:
+    limit_rad_s: 1.2
+    time_constant_s: 0.0

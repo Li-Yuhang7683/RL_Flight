@@ -72,3 +72,25 @@ airframes:
     notes:
       - Fresh airframe-2 closed-loop data must be collected after mechanical and actuator checks.
       - Preliminary flight2 logs are diagnostics only and must not be mixed into airframe-1 identification.
+
+  airframe-3:
+    airframe_number: 3
+    display_name: 机架3（新组装）
+    platform_family: micoair_h743-v2_micro_coaxial_3servo
+    controller_contract: pilot_acceleration_dual_motor_common_differential_servo_roll_pitch
+    status: awaiting_independent_calibration
+    log_sources:
+      - path: log/airframe-3/first_identification
+        role: pending_closed_loop_identification
+        use_for_identification: false
+    identification:
+      parameter_intake: Identification/configs/airframe3_parameter_intake.yaml
+      simulator_config: SimEnv/configs/sim2real_micro_coaxial_airframe3.yaml
+      controller_config: Controller/configs/lqi_coaxial_collective_servo_airframe3.yaml
+      firmware_config: px4_trans/configs/lqi_coaxial_collective_airframe3.yaml
+      firmware_manifest: px4_trans/generated/airframe-3/lqi_coaxial_collective_manifest.json
+      status: no_identification_report
+      flight_authorized: false
+    notes:
+      - Never reuse airframe-1 masses, inertia, motor maps or effective coefficients as measurements of this aircraft.
+      - An uncalibrated airframe cannot produce an activated payload or flight-authorized firmware.

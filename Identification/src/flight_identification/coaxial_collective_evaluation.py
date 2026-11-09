@@ -180,6 +180,7 @@ def _simulate_variant(
     command_change_s: float,
     measurement_mode: str,
     control_hz: int,
+    controller_parameters: Mapping[str, torch.Tensor] | None = None,
 ) -> dict[str, Any]:
     from flight_controller import (
         ControllerContext,
@@ -241,7 +242,11 @@ def _simulate_variant(
         device=device,
         dtype=dtype,
         control_dt=1.0 / control_hz,
-        parameters=materialized.parameters,
+        parameters=(
+            materialized.parameters
+            if controller_parameters is None
+            else controller_parameters
+        ),
     )
     controller = create_controller(config, context)
     plant = LocalPlantModel(materialized.parameters)
@@ -602,20 +607,44 @@ def _provenance(
     simulator_path: Path,
     controller_path: Path,
     controller_config: Mapping[str, Any],
+    *,
+    allow_missing_identification_report: bool = False,
 ) -> dict[str, Any]:
     airframe = controller_config.get("airframe", {})
     report_path = _resolve(airframe["identification_report"])
     calibration_path = _resolve(airframe["upper_motor_speed_calibration"])
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    header = (
-        ROOT / "px4_trans/generated/airframe-1/LqiIdentifiedModel.hpp"
-    )
+    report_available = report_path.is_file()
+    if not report_available and not allow_missing_identification_report:
+        raise FileNotFoundError(
+            f"identification report missing: {report_path}; "
+            "for offline simulation only, add "
+            "--allow-missing-identification-report"
+        )
+
+    # Missing reports must never be synthesized from an old model's metadata.
+    # Only the controller config identifies the model in this offline-only mode.
+    if report_available:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report_airframe = report["airframe"]
+        airframe_id = report_airframe["airframe_id"]
+        airframe_number = report_airframe["airframe_number"]
+        controller_contract = report_airframe["controller_contract"]
+    else:
+        airframe_id = airframe["id"]
+        airframe_number = None
+        controller_contract = None
+
+    header = ROOT / "px4_trans/generated/airframe-1/LqiIdentifiedModel.hpp"
     header_text = header.read_text(encoding="utf-8")
     checksum = airframe["identified_lqi_checksum"]
     return {
-        "airframe_id": report["airframe"]["airframe_id"],
-        "airframe_number": report["airframe"]["airframe_number"],
-        "controller_contract": report["airframe"]["controller_contract"],
+        "airframe_id": airframe_id,
+        "airframe_number": airframe_number,
+        "controller_contract": controller_contract,
+        "airframe_identity_source": (
+            "identification_report" if report_available else "controller_config_only"
+        ),
+        "identification_report_available": report_available,
         "identified_lqi_checksum": checksum,
         "checksum_present_in_embedded_header": (
             checksum.removeprefix("0x") + "u" in header_text
@@ -625,7 +654,9 @@ def _provenance(
         "controller_config": str(controller_path.relative_to(ROOT)),
         "controller_config_sha256": _sha256(controller_path),
         "identification_report": str(report_path.relative_to(ROOT)),
-        "identification_report_sha256": _sha256(report_path),
+        "identification_report_sha256": (
+            _sha256(report_path) if report_available else None
+        ),
         "upper_motor_speed_calibration": str(
             calibration_path.relative_to(ROOT)
         ),
@@ -636,7 +667,12 @@ def _provenance(
     }
 
 
-def evaluate(config_path: Path, output_path: Path) -> dict[str, Any]:
+def evaluate(
+    config_path: Path,
+    output_path: Path,
+    *,
+    allow_missing_identification_report: bool = False,
+) -> dict[str, Any]:
     from flight_controller import load_controller_config
     from simenv.config import load_and_materialize
 
@@ -660,7 +696,10 @@ def evaluate(config_path: Path, output_path: Path) -> dict[str, Any]:
     if not _resolve(airframe["identified_lqi_config"]).is_file():
         raise ValueError("identified LQI deployment config is unavailable")
     provenance = _provenance(
-        simulator_path, controller_path, controller_config
+        simulator_path,
+        controller_path,
+        controller_config,
+        allow_missing_identification_report=allow_missing_identification_report,
     )
     if provenance["airframe_id"] != "airframe-1":
         raise ValueError("evaluation requires the airframe-1 identification report")
@@ -764,7 +803,11 @@ def evaluate(config_path: Path, output_path: Path) -> dict[str, Any]:
     report = {
         "schema_version": 1,
         "artifact_type": "coaxial_collective_servo_nonlinear_validation",
-        "release_decision": "simulation_validation_only",
+        "release_decision": (
+            "simulation_validation_only"
+            if provenance["identification_report_available"]
+            else "simulation_validation_only_missing_provenance"
+        ),
         "flight_authorized": False,
         "config": config,
         "provenance": provenance,
@@ -799,12 +842,27 @@ def main() -> None:
         default=ROOT
         / "Identification/runs/lqi_coaxial_collective_servo_airframe1/validation.json",
     )
+    parser.add_argument(
+        "--allow-missing-identification-report",
+        action="store_true",
+        help=(
+            "Offline simulation only: continue without the archived identification "
+            "JSON and mark provenance incomplete. Never enables flight authorization."
+        ),
+    )
     args = parser.parse_args()
-    report = evaluate(args.config.resolve(), args.output.resolve())
+    report = evaluate(
+        args.config.resolve(),
+        args.output.resolve(),
+        allow_missing_identification_report=args.allow_missing_identification_report,
+    )
     print(json.dumps(
         {
             "output": str(args.output.resolve()),
             "passed": report["passed"],
+            "release_decision": report["release_decision"],
+            "identification_report_available": report["provenance"]["identification_report_available"],
+            "flight_authorized": report["flight_authorized"],
             "gates": report["gates"],
             "new_allocation": report["variants"][
                 "coaxial_collective_servo"
