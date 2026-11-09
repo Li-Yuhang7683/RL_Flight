@@ -69,7 +69,9 @@ def prepare(config_path: Path, *, stage_for_bench_build: bool = False) -> dict:
     if source_description.get("airframe_id") != "airframe-1":
         raise ValueError("baseline source is not airframe-1")
 
-    model, _, source_metadata = generator.load_model(source_path)
+    model, _, source_metadata = generator.load_model(
+        source_path, allow_missing_identification_report=True
+    )
     digest = generator.checksum(model)
     if config["expected_source_model_checksum"].lower() != f"0x{digest:08x}":
         raise ValueError("airframe-1 source model checksum changed; review required")
@@ -111,6 +113,9 @@ def prepare(config_path: Path, *, stage_for_bench_build: bool = False) -> dict:
         "purpose": config["purpose"],
         "model_checksum": f"0x{digest:08x}",
         "source": metadata,
+        "source_identification_report_available": metadata[
+            "identification_report_available"
+        ],
         "files": {
             "payload": str(payload.relative_to(ROOT)),
             "payload_sha256": generator.file_sha256(payload),
@@ -120,6 +125,7 @@ def prepare(config_path: Path, *, stage_for_bench_build: bool = False) -> dict:
         "staged_for_bench_build": stage_for_bench_build,
         "notes": [
             "This package uses airframe-1 manual-v3 nominal parameters.",
+            "Historical airframe-1 identification report may be absent; provenance marks its availability explicitly.",
             "The identical checksum denotes identical model numbers, not independently identified airframe-3 physics.",
             "Model outputs are NOT flight-authorized.",
         ],
