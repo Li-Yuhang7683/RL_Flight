@@ -68,3 +68,59 @@ python px4_trans/tools/generate_coaxial_collective_backend.py \
 4. 运行独立参数扰动闭环、接口 HIL、主机 C++ golden-vectors 和目标板构建；
 5. 逐项审查 MCU 输出路径、传感器新鲜度、失效保护与人工回退；
 6. **在没有实测数据之前，任何输出都只能是研究/候选用途，不构成飞行授权。**
+
+
+## 6. 用户确认：airframe-3 参数暂时与 airframe-1 相同（2026-11-09）
+
+新组装机架确认采用相同硬件与**标称参数数值**。因此新增一个独立的
+**未独立校准基线生成入口**，不需要为了生成离线候选而伪造
+`airframe-3` 的真实测量报告：
+
+- `Identification/configs/airframe3_baseline_from_airframe1.yaml`
+- `px4_trans/tools/generate_airframe3_baseline.py`
+
+继承的具体源为机架1的 `manual-v3`，包括 0.660 kg 质量、
+三轴惯量 [0.00050, 0.00050, 0.0007333333] kg·m²、
+8 状态姿态 LQI、Z 轴加速度 PI、两电机命令-速度查表、
+三路舵机动力学和控制分配。模型系数没有新辨识，源模型 checksum
+预期为 `0x78ae1111`，与机架1相同是合理的；身份改为 `airframe-3 / 3`。
+
+**首选操作仅导出不激活：**
+
+```bash
+cd ~/projects/RL_Flight
+conda activate rl-flight
+PYTHONPATH=Identification/src:Controller/src:SimEnv/src \
+python px4_trans/tools/generate_airframe3_baseline.py
+```
+
+生成归档为 `px4_trans/generated/airframe-3/baseline_from_airframe1/`，
+包含 `LqiCoaxialCollectivePayload.hpp`、主机黄金向量和 provenance 清单。
+其中 `flight_authorized=false`、`independently_calibrated=false`。
+
+**仅用于输出禁止的台架固件**（先检查旧活动头文件已备份）：
+
+```bash
+PYTHONPATH=Identification/src:Controller/src:SimEnv/src \
+python px4_trans/tools/generate_airframe3_baseline.py --stage-for-bench-build
+
+env CCACHE_DISABLE=1 MAKEFLAGS= \
+  PATH="$PWD/px4_trans/px4/.venv/bin:$PATH" \
+  PYTHON_EXECUTABLE="$PWD/px4_trans/px4/.venv/bin/python" \
+  make -C px4_trans/px4 micoair_h743-v2_nncontrol
+```
+
+生成器会备份原来的活动模型头文件，并写入内嵌编号3。实际目标固件路径为
+`px4_trans/px4/build/micoair_h743-v2_nncontrol/micoair_h743-v2_nncontrol.px4`，
+仅在编译通过时才存在。**未经过主机 C++ 核心/黄金向量测试、身份和
+PX4 参数核对、无桨执行器检查以及 HIL 前，禁止刷入实机。**
+
+台架测试阶段 `NN_LQI_OUTPUT_EN=0` 必须保持关闭；
+`NN_LQI_MODEL=2`、`NN_AIRFRAME_ID=3` 仅用于核对模型选择和身份，不是放行。
+输出映射、失效保护、固件 SHA256、载荷 checksum、ESC 电机方向、
+传感器时序和参数储存均须验证。控制器模型数值与机架1相同，不代表装配差异为零。
+
+真正采集到 airframe-3 独立数据后，切换回
+`px4_trans/configs/lqi_coaxial_collective_airframe3.yaml`
+所描述的**重新辨识和实测校准路线**；它当前保留
+`calibration_ready=false` 是有意的。
