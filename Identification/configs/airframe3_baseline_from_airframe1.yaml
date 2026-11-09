@@ -1,0 +1,14 @@
+# BENCH-ONLY assumed-parameter baseline for airframe-3.
+# User confirmed same physical parameter values as airframe-1.
+# This is NOT an independent measurement of the newly assembled aircraft.
+schema_version: 1
+target_airframe_id: airframe-3
+source_airframe_id: airframe-1
+airframe_registry: Identification/configs/airframes.yaml
+source_deployment_config: px4_trans/configs/lqi_coaxial_collective_airframe1_manual_v3.yaml
+expected_source_model_checksum: "0x78ae1111"
+output_dir: px4_trans/generated/airframe-3/baseline_from_airframe1
+parameter_provenance: assumed_identical_to_airframe1_manual_v3
+independently_calibrated: false
+flight_authorized: false
+purpose: offline_simulation_and_inhibited_bench_firmware_only
