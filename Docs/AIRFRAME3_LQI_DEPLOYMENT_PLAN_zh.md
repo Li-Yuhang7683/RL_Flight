@@ -79,7 +79,9 @@ python px4_trans/tools/generate_coaxial_collective_backend.py \
 - `Identification/configs/airframe3_baseline_from_airframe1.yaml`
 - `px4_trans/tools/generate_airframe3_baseline.py`
 
-继承的具体源为机架1的 `manual-v3`，包括 0.660 kg 质量、
+继承的具体源为机架1的 `manual-v3` 已归档 `LqiCoaxialCollectivePayload.hpp` 与
+黄金向量（`px4_trans/generated/airframe-1/manual-v3/`），**不会在不同数值库环境中
+重新解 DARE**；仅替换头文件里的机架编号与标识。具体参数包括 0.660 kg 质量、
 三轴惯量 [0.00050, 0.00050, 0.0007333333] kg·m²、
 8 状态姿态 LQI、Z 轴加速度 PI、两电机命令-速度查表、
 三路舵机动力学和控制分配。模型系数没有新辨识，源模型 checksum
@@ -124,3 +126,20 @@ PX4 参数核对、无桨执行器检查以及 HIL 前，禁止刷入实机。**
 `px4_trans/configs/lqi_coaxial_collective_airframe3.yaml`
 所描述的**重新辨识和实测校准路线**；它当前保留
 `calibration_ready=false` 是有意的。
+
+
+### 归档校验和差异的排查（2026-11-09）
+
+最初生成器在新机生成过程中重新求解机架1 LQI，重算字节 checksum 与历史
+`0x78ae1111` 不一致；这并不能直接证明物理参数不同，也不能未经核验
+直接修改 checksum。历史 `manual-v3` 清单、头文件和黄金向量仍存在仓库里。
+
+新脚本会：
+1. 用历史归档 manifest 校验模型头文件及两份黄金向量的 SHA256；
+2. 校验源码头文件的机架编号为1，模型 checksum 为 `0x78ae1111`；
+3. 只修改嵌入的机架 ID `airframe-1→airframe-3` 和编号 `1→3`，
+   不修改 LQI、推力及分配模型数值；
+4. 生成新机独立清单，明确历史辨识 JSON 如今是否存在；
+5. 默认不激活 PX4 载荷，所有实机飞行授权状态仍为 false。
+
+这属于**旧模型继承基线**，不是用 airframe-3 飞行日志重新辨识的新模型。
