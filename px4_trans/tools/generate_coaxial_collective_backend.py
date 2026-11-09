@@ -116,6 +116,8 @@ def interpolate_linear(
 
 def load_model(
     deployment_config: Path,
+    *,
+    allow_missing_identification_report: bool = False,
 ) -> tuple[
     dict[str, np.ndarray | float | int], dict[str, Any], dict[str, Any]
 ]:
@@ -137,6 +139,17 @@ def load_model(
     simulator_path = ROOT / deployment["simulator_config"]
     controller_path = ROOT / deployment["controller_config"]
     report_path = ROOT / deployment["identified_model"]["report"]
+    # Only the explicit inherited-baseline path may omit this historical
+    # provenance file. Ordinary deployment still requires it.
+    if allow_missing_identification_report and airframe_id != "airframe-1":
+        raise ValueError(
+            "missing identification report exception is only for airframe-1 source baseline"
+        )
+    if not report_path.is_file() and not allow_missing_identification_report:
+        raise FileNotFoundError(
+            "identification report is required for this deployment: "
+            f"{report_path}"
+        )
 
     # Preserve the existing airframe-1 generator. New airframes require
     # independently documented parameter and motor measurements.
@@ -384,8 +397,9 @@ def load_model(
         "lower_calibration_rows": lower_calibration,
 
         "identification_report": deployment["identified_model"]["report"],
-        "identification_report_sha256": file_sha256(
-            ROOT / deployment["identified_model"]["report"]
+        "identification_report_available": report_path.is_file(),
+        "identification_report_sha256": (
+            file_sha256(report_path) if report_path.is_file() else ""
         ),
         "identified_model_checksum": deployment["identified_model"][
             "expected_checksum"
