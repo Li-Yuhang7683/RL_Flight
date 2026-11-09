@@ -24,6 +24,22 @@ class Airframe3DeploymentPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uncalibrated"):
             self.module.load_model(CONFIG)
 
+    def test_normal_airframe1_generator_requires_real_report(self) -> None:
+        # The fallback is opt-in only for the assumed-parameter baseline.
+        source = ROOT / "px4_trans/configs/lqi_coaxial_collective_airframe1_manual_v3.yaml"
+        config = yaml.safe_load(source.read_text(encoding="utf-8"))
+        report_path = ROOT / config["identified_model"]["report"]
+        if report_path.is_file():
+            self.skipTest("historical report is available on this checkout")
+        with self.assertRaisesRegex(FileNotFoundError, "identification report"):
+            self.module.load_model(source)
+
+    def test_missing_report_exception_rejected_for_airframe3(self) -> None:
+        with self.assertRaisesRegex(ValueError, "only for airframe-1"):
+            self.module.load_model(
+                CONFIG, allow_missing_identification_report=True
+            )
+
     def test_new_airframe_metadata_remains_inhibited(self) -> None:
         deployment = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
         self.assertEqual(deployment["airframe_id"], "airframe-3")
