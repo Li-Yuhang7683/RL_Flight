@@ -20,6 +20,42 @@ class Airframe3DeploymentPreflightTests(unittest.TestCase):
         cls.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.module)
 
+    def test_archive_identity_rebinding_changes_only_embedded_identity(self) -> None:
+        # Archived payload is the authoritative numeric model: DARE re-solving
+        # is not reproducible byte-for-byte across all numerical environments.
+        import sys
+        import importlib.util
+        helper_path = ROOT / "px4_trans/tools/generate_airframe3_baseline.py"
+        tools_path = str(helper_path.parent)
+        sys.path.insert(0, tools_path)
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "airframe3_baseline_helper", helper_path
+            )
+            assert spec and spec.loader
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+            config = yaml.safe_load((
+                ROOT / "Identification/configs/airframe3_baseline_from_airframe1.yaml"
+            ).read_text(encoding="utf-8"))
+            manifest, sources = helper.load_verified_source(
+                config["expected_source_model_checksum"]
+            )
+            original = sources["payload"].read_text(encoding="utf-8")
+            replacement = helper.rebind_identity_only(original)
+            self.assertIn("kAirframeNumber{3u}", replacement)
+            self.assertIn('kAirframeId[]{"airframe-3"}', replacement)
+            self.assertNotIn("kAirframeNumber{1u}", replacement)
+            self.assertEqual(
+                replacement.split("namespace lqi_coaxial_collective")[1].replace(
+                    "kAirframeNumber{3u}", "kAirframeNumber{1u}"
+                ).replace("airframe-3", "airframe-1"),
+                original.split("namespace lqi_coaxial_collective")[1],
+            )
+            self.assertEqual(manifest["model_checksum"], "0x78ae1111")
+        finally:
+            sys.path.remove(tools_path)
+
     def test_airframe3_cannot_generate_without_independent_calibration(self) -> None:
         with self.assertRaisesRegex(ValueError, "uncalibrated"):
             self.module.load_model(CONFIG)
