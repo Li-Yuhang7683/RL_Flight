@@ -17,7 +17,7 @@ def main() -> None:
     if not root.is_dir():
         parser.error("Directory does not exist: " + str(root))
     print("VENDOR_ROOT:", root)
-    print("GIT_REMOTE:", git(root, "remote", "-v"))
+    print("GIT_REMOTE_NAMES:", git(root, "remote"))
     print("GIT_HEAD:", git(root, "rev-parse", "HEAD"))
     print("GIT_BRANCH:", git(root, "branch", "--show-current"))
     print("TOP_LEVEL:", ", ".join(sorted(p.name for p in root.iterdir())[:80]))
