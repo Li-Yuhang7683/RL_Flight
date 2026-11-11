@@ -21,13 +21,41 @@ INNER_SHA256 = "b20f875ea87e09134e4cf9727273684ded0c45cff5c6543c022cb449bf28cc27
 VENDOR_BOARD = "boards/endlessflight/h743ultra"
 BOARD_ID = 1179
 GS_VARIANT = """# EndlessFlight H7Ultra GS-Link communication-only bench variant.
-# Inherit vendor default.px4board and stock PX4 flight controllers.
-# No UART auto takeover or ground-station flight authority.
+# Inherit a BENCH-ONLY adapted vendor default.px4board and stock controllers.
+# Does not auto-start GS-Link or grant ground-station control authority.
 CONFIG_MODULES_GS_LINK=y
-# Missing from pinned Ryan source; vendor script tries to start it.
-# Requires later driver port and real magnetometer validation.
-CONFIG_DRIVERS_MAGNETOMETER_QMC5883P=n
 """
+# Preserve the vendor ZIP byte-for-byte. These changes affect only the
+# staged bench checkout, and must NEVER be mistaken for a flight BSP.
+UNSUPPORTED = {
+    "CONFIG_DRIVERS_MAGNETOMETER_QMC5883P=y": "QMC5883P driver absent in pinned Ryan PX4",
+    "CONFIG_COMMON_INS=y": "COMMON_INS Kconfig symbol absent in pinned Ryan PX4",
+}
+
+def adapt_bench_board(files: dict[str, bytes]) -> dict[str, bytes]:
+    config = files["default.px4board"].decode("utf-8")
+    for key, reason in UNSUPPORTED.items():
+        if config.count(key) != 1:
+            raise ValueError("Expected exactly one vendor config entry: " + key)
+        config = config.replace(key, "# BENCH ONLY: " + reason + "\n# " + key, 1)
+    files["default.px4board"] = config.encode("utf-8")
+    sensors = files["init/rc.board_sensors"].decode("utf-8")
+    cmd = "qmc5883p -I -a 0x2C -R 6 start"
+    if sensors.count(cmd) != 1:
+        raise ValueError("Unexpected vendor QMC5883P startup script")
+    files["init/rc.board_sensors"] = sensors.replace(
+        cmd, "# BENCH ONLY: QMC5883P driver absent\n# " + cmd, 1
+    ).encode("utf-8")
+    defaults = files["init/rc.board_defaults"].decode("utf-8")
+    old = "param set-default SYS_HAS_MAG 1"
+    if defaults.count(old) != 1:
+        raise ValueError("Unexpected SYS_HAS_MAG vendor default")
+    files["init/rc.board_defaults"] = defaults.replace(
+        old,
+        "# BENCH ONLY: no magnetometer driver in pinned Ryan PX4\n"
+        "param set-default SYS_HAS_MAG 0", 1
+    ).encode("utf-8")
+    return files
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -93,13 +121,14 @@ def main() -> int:
         files = board_from_zip(z)
     except (ValueError, OSError, zipfile.BadZipFile) as error:
         parser.error(str(error))
+    files = adapt_bench_board(files)
     files["gslink.px4board"] = GS_VARIANT.encode()
     dst = px4 / VENDOR_BOARD
     changed = [k for k, data in files.items()
                if (dst / k).exists() and (dst / k).read_bytes() != data]
     if changed:
         parser.error("Refusing to overwrite modified BSP files: " + ", ".join(changed))
-    print("Ryan PX4 commit:", head)
+    print("Ryan PX4 commit:", head)\n    print("BENCH: QMC5883P/COMMON_INS unsupported; skip QMC startup; SYS_HAS_MAG=0")
     print("Vendor board:", VENDOR_BOARD, "ID:", BOARD_ID,
           "(shared ID with MicoAir; validate board name too)")
     for k in sorted(files):
@@ -112,8 +141,8 @@ def main() -> int:
         if not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-    print("Staged vendor BSP and gslink.px4board; no firmware built or flashed.")
-    print("Next (after compatibility review): make endlessflight_h743ultra_gslink")
+    print("Staged BENCH-ONLY vendor BSP and gslink.px4board; no firmware built or flashed.")
+    print("Next (after compatibility review): make endlessflight_h743ultra_gslink")\n    print("NOT flight-ready. No compiler, HIL, RC, UART or failsafe validation.")
     return 0
 
 if __name__ == "__main__":
