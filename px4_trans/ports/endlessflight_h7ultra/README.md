@@ -1,5 +1,10 @@
 # EndlessFlight H7Ultra / GS-Link v1 — phase 1 staging
 
+**New official vendor repository supplied:** https://gitee.com/endlessflight/fc-h7-ultra
+
+See [VENDOR_SOURCE.md](VENDOR_SOURCE.md) for confirmed vendor README facts, current Gitee access limitations, and the read-only clone inspection workflow.
+
+
 **Status: source staging only; NOT compiled, NOT a verified H7Ultra firmware, NOT flight-ready.**
 
 This folder is the **H7Ultra integration staging area in Li-Yuhang7683/RL_Flight**.
