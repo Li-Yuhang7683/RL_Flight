@@ -114,8 +114,17 @@ make endlessflight_h743ultra_gslink
 
 H7Ultra 的 `board_id=1179` 可能与其他板复用；**绝不能仅以 board_id 判断刷机安全**。保留原厂固件和参数备份。
 
-## 5. 历史脚本说明
+## 5. 本地离线核验与历史脚本
 
-早期的 `apply_h7ultra_board.py`、`install_vendor_bsp.py` 和 `apply_gs_link.py` 处理的是不同 PX4 基线和分步工作流，已经被 **`integrate_px4_v1160.py` 取代**。避免混用两套编译基线。
+为避免将 Ryan v1.16.2 基线误当成厂家 v1.16.0，旧的 `apply_h7ultra_board.py`、`install_vendor_bsp.py`、`apply_gs_link.py` 已从本分支删除。**只使用 `integrate_px4_v1160.py`。**
+
+在 WSL2 的 RL_Flight 仓库根目录，可先运行纯本地集成检查（不读取、改写飞控）：
+
+```bash
+python3 px4_trans/ports/endlessflight_h7ultra/test_integration.py \
+  --vendor-zip "$VENDOR_ZIP"
+```
+
+此测试覆盖厂家 SHA/板型、33 项源码写入计划、幂等性、版本防错和覆盖冲突保护；**不替代 ARM 交叉编译或硬件验证**。
 
 来源核对：[VENDOR_SOURCE.md](VENDOR_SOURCE.md) · [SOURCE_MANIFEST.md](SOURCE_MANIFEST.md)
